@@ -3,7 +3,7 @@
 // machine's LAN IP via mobile/.env:  EXPO_PUBLIC_API_BASE=http://192.168.1.20:4000
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const API_BASE = process.env.EXPO_PUBLIC_API_BASE || 'http://localhost:4000';
+export const API_BASE = "https://Critiflix.onrender.com";
 
 // Build a full URL for media stored on the API (posters/trailers come back as /uploads/...).
 export const mediaUrl = (path) => (!path ? null : /^https?:\/\//.test(path) ? path : `${API_BASE}${path}`);
