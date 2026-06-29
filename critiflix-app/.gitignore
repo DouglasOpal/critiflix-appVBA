@@ -1,0 +1,47 @@
+# ---- dependencies ----
+node_modules/
+**/node_modules/
+
+# ---- expo / RN ----
+.expo/
+**/.expo/
+*.expo/
+dist/
+web-build/
+.expo-shared/
+
+# ---- env & secrets ----
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# ---- logs ----
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# ---- native build output ----
+android/
+ios/
+*.apk
+*.aab
+*.ipa
+
+# ---- uploads (keep the folder, ignore its contents) ----
+server/uploads/*
+!server/uploads/.gitkeep
+!server/uploads/.gitignore
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- lockfiles are optional; keep them if you want reproducible installs ----
+# package-lock.json

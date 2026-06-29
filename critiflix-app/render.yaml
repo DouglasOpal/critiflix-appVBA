@@ -1,0 +1,49 @@
+# CritiFlix — Render Blueprint (native Node, no Docker needed).
+# In Render: New + → "Blueprint" → connect this repo. Render reads this file,
+# creates the service, and prompts for the secret values (sync:false) below.
+services:
+  - type: web
+    name: critiflix-api
+    runtime: node
+    plan: free
+    rootDir: server                      # build/start run inside server/ (admin/ is still on disk at ../admin)
+    buildCommand: npm install
+    startCommand: node src/scripts/seed-if-empty.js && node src/index.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SEED_ON_START
+        value: "true"
+      # --- database: paste your MongoDB Atlas connection string in the dashboard ---
+      - key: MONGODB_URI
+        sync: false
+      # --- auth secrets: Render generates strong random values automatically ---
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # --- first admin (created on first boot if the DB is empty) ---
+      - key: ADMIN_EMAIL
+        value: admin@critiflix.app
+      - key: ADMIN_NAME
+        value: CritiFlix Admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      # --- Twilio (SMS one-time codes + WhatsApp promotions) ---
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+      # --- Paystack (payments) ---
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: PAYSTACK_CALLBACK_URL
+        sync: false
