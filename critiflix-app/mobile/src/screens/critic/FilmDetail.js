@@ -26,6 +26,25 @@ export default function FilmDetail({ route, navigation }) {
   };
   const closeTrailer = () => { try { player.pause(); } catch {} setTrailerOpen(false); };
 
+  // Like/unlike a review (requirement 18); creators/admin can delete (requirement 2).
+  const toggleLike = async (rid) => {
+    try {
+      const res = await api.likeReview(id, rid);
+      setT((prev) => prev && { ...prev, reviews: prev.reviews.map((r) => ((r.id || r._id) === rid ? { ...r, liked: res.liked, likeCount: res.likeCount } : r)) });
+    } catch (e) { Alert.alert('Could not update', e.message); }
+  };
+  const removeReview = (rid) => {
+    Alert.alert('Delete review', 'Remove this comment from your title?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try {
+          await api.deleteReviewAsCreator(id, rid);
+          setT((prev) => prev && { ...prev, reviews: prev.reviews.filter((r) => (r.id || r._id) !== rid) });
+        } catch (e) { Alert.alert('Could not delete', e.message); }
+      } },
+    ]);
+  };
+
   if (!t) return <Screen><ActivityIndicator color={colors.red} style={{ marginTop: 60 }} /></Screen>;
 
   const words = (t.synopsis || '').trim().split(/\s+/).filter(Boolean).length;
@@ -133,6 +152,17 @@ export default function FilmDetail({ route, navigation }) {
                   </View>
                   {rv.headline ? <Text style={{ fontSize: 13, fontWeight: '700', color: colors.navyInk, marginTop: 9 }}>{rv.headline}</Text> : null}
                   {rv.body ? <Text style={{ fontSize: 12.5, color: colors.mist, lineHeight: 18, marginTop: 3 }}>{rv.body}</Text> : null}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 10 }}>
+                    <Pressable onPress={() => toggleLike(rv.id || rv._id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Text style={{ fontSize: 15 }}>{rv.liked ? '❤️' : '🤍'}</Text>
+                      <Text style={{ fontSize: 12, color: rv.liked ? colors.red : colors.mist2, fontWeight: '700' }}>{rv.likeCount || 0}</Text>
+                    </Pressable>
+                    {t.canManageReviews ? (
+                      <Pressable onPress={() => removeReview(rv.id || rv._id)}>
+                        <Text style={{ fontSize: 12, color: colors.mist2, fontWeight: '600' }}>Delete</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 </Card>
               );
             })}

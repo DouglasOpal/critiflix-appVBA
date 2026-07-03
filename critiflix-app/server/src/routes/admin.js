@@ -7,13 +7,15 @@ import { Cashout } from '../models/Cashout.js';
 import { Integration } from '../models/Integration.js';
 import { Subscription } from '../models/Subscription.js';
 import { Announcement } from '../models/Announcement.js';
+import { Review } from '../models/Review.js';
+import { Follow } from '../models/Follow.js';
 import { notifyUsers } from '../services/notify.js';
-import { sendWhatsApp, whatsappEnabled } from '../services/twilio.js';
+import { sendWhatsApp, whatsappEnabled } from '../services/termii.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { badRequest, notFound } from '../utils/ApiError.js';
 import { protect, requireRole } from '../middleware/auth.js';
-import { PLANS } from '../points.js';
-import { getSubscriptionRevenue, getPayoutBudget } from '../services/billing.js';
+import { PLANS, getPlan, normalizePlan } from '../points.js';
+import { getSubscriptionRevenue, getPayoutBudget, activatePlan } from '../services/billing.js';
 import { createTransferRecipient, initiateTransfer, newReference } from '../services/paystack.js';
 
 const r = Router();
@@ -23,11 +25,11 @@ r.get('/overview', asyncHandler(async (req, res) => {
   const [critics, creators, subscribed, pointsAgg, pending] = await Promise.all([
     User.countDocuments({ role: 'critic' }),
     User.countDocuments({ role: 'creator' }),
-    User.find({ role: 'creator', plan: { $ne: 'starter' } }).select('plan').lean(),
+    User.find({ role: 'creator' }).select('plan').lean(),
     PointsLedger.aggregate([{ $match: { points: { $gt: 0 } } }, { $group: { _id: null, total: { $sum: '$points' } } }]),
     Cashout.find({ status: 'review' }).lean(),
   ]);
-  const mrr = subscribed.reduce((s, c) => s + (PLANS[c.plan]?.price || 0), 0);
+  const mrr = subscribed.reduce((s, c) => s + (getPlan(c.plan)?.price || 0), 0);
   const recent = await PointsLedger.find().sort({ createdAt: -1 }).limit(6).populate('user', 'name').lean();
   res.json({
     kpis: {
@@ -66,9 +68,9 @@ r.post('/users/:id/:action', asyncHandler(async (req, res) => {
 
 r.get('/subscriptions', asyncHandler(async (req, res) => {
   const creators = await User.find({ role: 'creator' }).select('plan').lean();
-  const byPlan = Object.values(PLANS).map((p) => ({ ...p, count: creators.filter((c) => c.plan === p.id).length }));
-  const mrr = creators.reduce((s, c) => s + (PLANS[c.plan]?.price || 0), 0);
-  res.json({ mrr, subscribed: creators.filter((c) => c.plan !== 'starter').length, byPlan });
+  const byPlan = Object.values(PLANS).map((p) => ({ ...p, count: creators.filter((c) => normalizePlan(c.plan) === p.id).length }));
+  const mrr = creators.reduce((s, c) => s + (getPlan(c.plan)?.price || 0), 0);
+  res.json({ mrr, subscribed: creators.filter((c) => normalizePlan(c.plan) !== 'free').length, byPlan });
 }));
 
 r.get('/promotions', asyncHandler(async (req, res) => {
@@ -159,6 +161,22 @@ r.get('/titles', asyncHandler(async (req, res) => {
 }));
 
 // Full title properties for the admin approval review.
+// ---- Download title rating/scoring statistics as CSV (requirement 17) ----
+r.get('/titles/stats.csv', asyncHandler(async (req, res) => {
+  const titles = await Title.find({}).populate('creator', 'name plan').sort({ score: -1 }).lean();
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const header = ['Code', 'Title', 'Creator', 'Plan', 'Genre', 'Status', 'Score(/10)', 'Reviews', 'Watches', 'WatchPoints', 'Boost', 'CreatedAt'];
+  const rows = titles.map((t) => [
+    t.code, t.title, t.creator?.name || '', t.creator?.plan || '', t.genre, t.status,
+    t.score ?? '', t.reviewCount || 0, t.watchCount || 0, t.watchPoints || 0, t.boost || 0,
+    t.createdAt ? new Date(t.createdAt).toISOString() : '',
+  ].map(esc).join(','));
+  const csv = [header.map(esc).join(','), ...rows].join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="critiflix-title-stats.csv"');
+  res.send(csv);
+}));
+
 r.get('/titles/:id', asyncHandler(async (req, res) => {
   const t = await Title.findById(req.params.id).populate('creator', 'name code email plan channelUrl').lean();
   if (!t) throw notFound('Title not found');
@@ -173,8 +191,11 @@ r.post('/titles/:id/:action', asyncHandler(async (req, res) => {
       if (t.status === 'pending' || t.status === 'delisted') {
         t.status = 'reviewing';
         await t.save();
-        // notify critics that a new title is live
-        await notifyUsers({ role: 'critic', type: 'new_title', title: `New film: ${t.title}`, body: `${t.genre} — now available to watch & review.`, data: { titleId: String(t._id) } });
+        // Notify critics who FOLLOW this creator (requirement 14); fall back to all critics.
+        const followerIds = (await Follow.find({ following: t.creator }).select('follower').lean()).map((f) => f.follower);
+        const payload = { type: 'new_title', title: `New film: ${t.title}`, body: `${t.genre} — now available to watch & review.`, data: { titleId: String(t._id) } };
+        if (followerIds.length) await notifyUsers({ userIds: followerIds, ...payload });
+        else await notifyUsers({ role: 'critic', ...payload });
       }
       break;
     case 'delist': t.status = 'delisted'; break;        // violation / illegal content
@@ -230,23 +251,23 @@ r.get('/revenue', asyncHandler(async (req, res) => {
   ]);
   const byPlan = {};
   for (const s of subs) {
-    const k = s.plan;
+    const k = normalizePlan(s.plan);
     byPlan[k] = byPlan[k] || { count: 0, revenue: 0 };
     byPlan[k].count += 1;
-    byPlan[k].revenue += s.price || PLANS[k]?.price || 0;
+    byPlan[k].revenue += s.price || getPlan(k)?.price || 0;
   }
   // last-6-months subscription revenue series
   const series = {};
   for (const s of subs) {
     const d = new Date(s.createdAt); const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    series[key] = (series[key] || 0) + (s.price || PLANS[s.plan]?.price || 0);
+    series[key] = (series[key] || 0) + (s.price || getPlan(s.plan)?.price || 0);
   }
-  const paying = subs.filter((s) => s.plan !== 'starter').length;
+  const paying = subs.filter((s) => normalizePlan(s.plan) !== 'free').length;
   res.json({
     mrr: revenue,
     arpu: paying ? Math.round(revenue / paying) : 0,
     payoutPool: budget.pool, payoutAllocated: budget.allocated, payoutRemaining: budget.remaining,
-    byPlan: Object.entries(byPlan).map(([plan, v]) => ({ plan, name: PLANS[plan]?.name || plan, ...v })),
+    byPlan: Object.entries(byPlan).map(([plan, v]) => ({ plan, name: getPlan(plan)?.name || plan, ...v })),
     revenueSeries: Object.entries(series).sort().map(([month, amount]) => ({ month, amount })),
   });
 }));
@@ -272,18 +293,27 @@ r.post('/announcements', asyncHandler(async (req, res) => {
 // Business API; without it this is simulated — it records the broadcast, posts an
 // in-app alert, and returns the recipient numbers + a click-to-chat template.
 r.post('/promotions/whatsapp', asyncHandler(async (req, res) => {
-  const { audience = 'all', title, message } = req.body || {};
+  const { audience = 'all', title, message, titleId } = req.body || {};
   if (!title || !message) throw badRequest('A title and message are required');
   const role = audience === 'critics' ? 'critic' : audience === 'creators' ? 'creator' : null;
   const q = role ? { role } : { role: { $ne: 'admin' } };
   const recipients = await User.find({ ...q, whatsapp: { $ne: null } }).select('name whatsapp _id').lean();
 
-  await Announcement.create({ audience, title, body: message, channel: 'whatsapp', createdBy: req.user._id });
-  await notifyUsers({ userIds: recipients.map((u) => u._id), type: 'promo', title, body: message });
+  // Optional title thumbnail to feature in the promo (requirement 13).
+  let posterUrl = null, filmName = null;
+  if (titleId) {
+    const film = await Title.findById(titleId).select('title posterLarge posterSmall').lean();
+    if (film) { filmName = film.title; posterUrl = film.posterLarge || film.posterSmall || null; }
+  }
+  const base = (req.body.publicBase || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+  const posterAbs = posterUrl ? (posterUrl.startsWith('http') ? posterUrl : base + posterUrl) : null;
+  const waText = `${title}\n\n${message}${filmName ? `\n\n🎬 ${filmName}` : ''}${posterAbs ? `\n${posterAbs}` : ''}`;
 
-  // Real delivery via Twilio WhatsApp when configured; otherwise return click-to-chat links.
+  await Announcement.create({ audience, title, body: message, channel: 'whatsapp', createdBy: req.user._id });
+  await notifyUsers({ userIds: recipients.map((u) => u._id), type: 'promo', title, body: message, data: titleId ? { titleId } : {} });
+
+  // Real delivery via Termii WhatsApp when configured; otherwise return click-to-chat links.
   let delivered = 0;
-  const waText = `${title}\n\n${message}`;
   if (whatsappEnabled) {
     await Promise.all(recipients.map(async (u) => {
       try { await sendWhatsApp(u.whatsapp, waText); delivered += 1; } catch (e) { /* skip failed */ }
@@ -292,12 +322,12 @@ r.post('/promotions/whatsapp', asyncHandler(async (req, res) => {
 
   const text = encodeURIComponent(waText);
   res.status(201).json({
-    audience, recipientCount: recipients.length, delivered,
-    sentVia: whatsappEnabled ? 'twilio' : 'links',
+    audience, recipientCount: recipients.length, delivered, poster: posterAbs,
+    sentVia: whatsappEnabled ? 'termii' : 'links',
     recipients: recipients.map((u) => ({ name: u.name, whatsapp: u.whatsapp, link: `https://wa.me/${String(u.whatsapp).replace(/[^0-9]/g, '')}?text=${text}` })),
     note: whatsappEnabled
-      ? `Sent ${delivered}/${recipients.length} via Twilio WhatsApp. Links are provided as a fallback.`
-      : 'Twilio WhatsApp not configured — open each click-to-chat link to send, or set TWILIO_WHATSAPP_FROM to auto-send.',
+      ? `Sent ${delivered}/${recipients.length} via Termii WhatsApp. Links are provided as a fallback.`
+      : 'Termii WhatsApp not configured — open each click-to-chat link to send, or set TERMII_API_KEY to auto-send.',
   });
 }));
 
@@ -307,9 +337,33 @@ r.post('/users/:id/plan', asyncHandler(async (req, res) => {
   if (!PLANS[plan]) throw badRequest('Unknown plan');
   const u = await User.findById(req.params.id);
   if (!u || u.role !== 'creator') throw notFound('Creator not found');
-  u.plan = plan;
-  await u.save();
-  res.json({ id: u._id, plan: u.plan });
+  if (plan === 'free') { u.plan = 'free'; await u.save(); }
+  else { await activatePlan(u, plan); } // fund the campaign pool for paid plans
+  res.json({ id: u._id, plan: u.plan, campaignRemaining: u.campaignRemaining });
+}));
+
+// ---- Reviews moderation (requirement 1): view + delete any review ----
+r.get('/reviews', asyncHandler(async (req, res) => {
+  const { titleId } = req.query;
+  const q = titleId ? { title: titleId } : {};
+  const reviews = await Review.find(q)
+    .populate('critic', 'name code')
+    .populate('title', 'title code')
+    .sort({ createdAt: -1 }).limit(500).lean();
+  res.json(reviews.map((rv) => ({
+    id: rv._id, rating: rv.rating, score: rv.score, headline: rv.headline, body: rv.body,
+    likeCount: rv.likeCount || 0, createdAt: rv.createdAt,
+    critic: rv.critic?.name, criticCode: rv.critic?.code,
+    title: rv.title?.title, titleId: rv.title?._id,
+  })));
+}));
+
+r.delete('/reviews/:id', asyncHandler(async (req, res) => {
+  const rv = await Review.findByIdAndDelete(req.params.id);
+  if (!rv) throw notFound('Review not found');
+  const agg = await Review.aggregate([{ $match: { title: rv.title } }, { $group: { _id: '$title', avg: { $avg: '$score' }, count: { $sum: 1 } } }]);
+  await Title.findByIdAndUpdate(rv.title, { reviewCount: agg[0]?.count || 0, score: agg[0] ? Math.round(agg[0].avg * 10) / 10 : null });
+  res.json({ ok: true });
 }));
 
 export default r;

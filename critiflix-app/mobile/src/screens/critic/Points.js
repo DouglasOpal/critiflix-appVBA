@@ -59,10 +59,8 @@ export default function Points({ navigation }) {
             <Card style={{ padding: 14, marginBottom: 16, borderWidth: 1.5, borderColor: colors.line }}>
               <Text style={{ fontWeight: '700', fontSize: 13.5, color: colors.navyInk }}>Unlock earning & cashout</Text>
               <Text style={{ fontSize: 11.5, color: colors.mist, marginTop: 3, marginBottom: 12 }}>
-                Reach {data.eligibility.minFollowers} followers and {data.eligibility.minReviews.toLocaleString()} reviews to start earning points and cash out.
+                Watch &amp; review {data.eligibility.minReviews.toLocaleString()} titles to start earning points and cash out.
               </Text>
-              <Progress label="Followers" value={data.eligibility.followers} target={data.eligibility.minFollowers} />
-              <View style={{ height: 10 }} />
               <Progress label="Reviews" value={data.eligibility.reviews} target={data.eligibility.minReviews} />
             </Card>
           ) : null}

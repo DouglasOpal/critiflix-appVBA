@@ -75,10 +75,12 @@ export default function RegisterStudio({ navigation, route }) {
     if (password.length < 8) return Alert.alert('Weak password', 'Use at least 8 characters.');
     try {
       // confirm the email before the studio account is created
-      const res = await api.otpRequest('email', email.trim());
+      const otpChannel = prefill.otpChannel || 'phone';
+      const wa = String(prefill.whatsapp || '').trim();
+      await api.otpRequest(otpChannel, wa);
       navigation.navigate('ConfirmAccount', {
-        pending: { role: 'creator', name, email: email.trim(), password, whatsapp: prefill.whatsapp, channelUrl, otherUrl, country, genre, logoUri },
-        channel: 'email', destination: email.trim(), devCode: res.devCode,
+        pending: { role: 'creator', name, email: email.trim(), password, whatsapp: wa, channelUrl, otherUrl, country, genre, logoUri },
+        channel: otpChannel, destination: wa,
       });
     } catch (e) { Alert.alert('Could not send code', e.message); }
   };

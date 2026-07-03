@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, Alert, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Alert, StyleSheet, TextInput } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 import { Screen, TopBand, Pad } from '../../components/Screen';
@@ -17,15 +17,35 @@ export default function Redeem({ route, navigation }) {
   const balance = route.params?.balance ?? 0;
   const [amount] = useState(Math.min(8000, balance));
   const [sel, setSel] = useState(0);
+  const [step, setStep] = useState('choose');      // 'choose' -> 'verify'
+  const [otpChannel, setOtpChannel] = useState('phone');
+  const [code, setCode] = useState('');
+  const [sentTo, setSentTo] = useState('');
+  const [busy, setBusy] = useState(false);
 
+  // Step 1: send an SMS/WhatsApp token to authorise the cashout.
+  const startCashout = async () => {
+    setBusy(true);
+    try {
+      const res = await api.redeemOtp(otpChannel);
+      setSentTo(res.to || 'your number');
+      setStep('verify');
+    } catch (e) { Alert.alert('Could not send code', e.message); }
+    finally { setBusy(false); }
+  };
+
+  // Step 2: confirm the cashout with the code.
   const cashout = async () => {
+    if (code.trim().length < 6) return Alert.alert('Code', 'Enter the 6-digit code sent to your number.');
+    setBusy(true);
     try {
       const d = DESTS[sel];
-      const res = await api.redeem({ points: amount, method: d.key, destination: d.dest });
+      const res = await api.redeem({ points: amount, method: d.key, destination: d.dest, code: code.trim(), channel: otpChannel });
       await refresh();
       Alert.alert('Cashout requested', `₦${res.cashout.amount.toLocaleString()} to ${d.dest}. New balance: ${res.balance.toLocaleString()} pts.`);
       navigation.goBack();
     } catch (e) { Alert.alert('Could not cash out', e.message); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -71,7 +91,28 @@ export default function Redeem({ route, navigation }) {
           <Text style={{ color: colors.mist, fontSize: 12.5 }}>You’ll receive</Text>
           <Text style={{ fontWeight: '700', color: colors.navyInk }}>₦{(amount - 25).toLocaleString()}</Text>
         </Card>
-        <Button title={`Cash out ₦${amount.toLocaleString()}`} onPress={cashout} />
+        {step === 'choose' ? (
+          <View>
+            <Text style={{ fontSize: 11.5, color: colors.mist2, marginBottom: 6 }}>Verify this cashout by:</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              {[['phone', 'SMS'], ['whatsapp', 'WhatsApp']].map(([k, lbl]) => (
+                <Pressable key={k} onPress={() => setOtpChannel(k)} style={{ flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: otpChannel === k ? colors.navy : '#fff', borderWidth: 1, borderColor: otpChannel === k ? colors.navy : colors.line }}>
+                  <Text style={{ color: otpChannel === k ? '#fff' : colors.navy, fontWeight: '700', fontSize: 12.5 }}>{lbl}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Button title={busy ? 'Sending code…' : `Cash out ₦${amount.toLocaleString()}`} onPress={startCashout} disabled={busy} />
+          </View>
+        ) : (
+          <View>
+            <Text style={{ fontSize: 12, color: colors.mist, marginBottom: 8 }}>Enter the code sent to {sentTo} to authorise this cashout.</Text>
+            <Card style={{ padding: 4, marginBottom: 12 }}>
+              <TextInput value={code} onChangeText={setCode} placeholder="______" placeholderTextColor={colors.mist2} keyboardType="number-pad" maxLength={6} style={{ fontSize: 22, letterSpacing: 8, textAlign: 'center', color: colors.navyInk, paddingVertical: 12, fontWeight: '700' }} />
+            </Card>
+            <Button title={busy ? 'Verifying…' : `Confirm cashout ₦${amount.toLocaleString()}`} onPress={cashout} disabled={busy} />
+            <Pressable onPress={startCashout} disabled={busy} style={{ marginTop: 12, alignItems: 'center' }}><Text style={{ color: colors.red, fontSize: 12.5, fontWeight: '600' }}>Resend code</Text></Pressable>
+          </View>
+        )}
       </Pad>
     </Screen>
   );

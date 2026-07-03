@@ -57,7 +57,7 @@ async function main() {
     out.push(['studio', { avg: studio.body.stats?.avgScore, titles: studio.body.titles?.length }]);
 
     // subscribe (Paystack — simulated when no key) should activate the plan
-    const sub = await J(await fetch(`${base}/api/me/subscribe`, { method: 'POST', headers: creatorH, body: JSON.stringify({ plan: 'studio' }) }));
+    const sub = await J(await fetch(`${base}/api/me/subscribe`, { method: 'POST', headers: creatorH, body: JSON.stringify({ plan: 'growth' }) }));
     out.push(['subscribe', { status: sub.body.status, simulated: sub.body.simulated, hasCheckout: !!sub.body.checkoutUrl }]);
 
     const alog = await J(await fetch(`${base}/api/auth/login`, { method: 'POST', headers: h(), body: JSON.stringify({ email: 'admin@critiflix.app', password: 'critiflix123' }) }));

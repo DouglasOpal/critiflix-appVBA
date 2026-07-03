@@ -9,8 +9,9 @@ import { User } from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { badRequest, forbidden } from '../utils/ApiError.js';
 import { protect } from '../middleware/auth.js';
+import { sendOtp, verifyOtp } from '../services/otp.js';
 import { cashoutCode } from '../utils/ids.js';
-import { POINTS, PLANS, REDEEM_RATE, CASHOUT_FEE, isEligibleToEarn, EARN_MIN_FOLLOWERS, EARN_MIN_REVIEWS } from '../points.js';
+import { POINTS, PLANS, REDEEM_RATE, CASHOUT_FEE, isEligibleToEarn, EARN_MIN_REVIEWS, getPlan } from '../points.js';
 import { initializeTransaction, newReference } from '../services/paystack.js';
 import { activatePlan, getPayoutBudget } from '../services/billing.js';
 import { env } from '../config/env.js';
@@ -27,9 +28,7 @@ r.get('/points', asyncHandler(async (req, res) => {
     earnRates: { watch: '50–150', ...POINTS },
     eligibility: {
       eligible: isEligibleToEarn(req.user),
-      followers: req.user.followers || 0,
       reviews: req.user.reviewCount || 0,
-      minFollowers: EARN_MIN_FOLLOWERS,
       minReviews: EARN_MIN_REVIEWS,
     },
     ledger,
@@ -45,12 +44,29 @@ r.get('/reviews', asyncHandler(async (req, res) => {
   res.json(reviews);
 }));
 
+// Critic: request an OTP to authorise a cashout. Channel: 'sms' or 'whatsapp'.
+r.post('/redeem/otp', asyncHandler(async (req, res) => {
+  const number = req.user.whatsapp || req.user.phone;
+  if (!number) throw badRequest('No phone/WhatsApp number on file for verification');
+  const channel = req.body?.channel === 'whatsapp' ? 'whatsapp' : 'phone';
+  await sendOtp(channel, number);
+  const masked = String(number).replace(/.(?=.{3})/g, '•');
+  res.json({ sent: true, to: masked, channel });
+}));
+
 // Critic: redeem points -> cashout request (settled later via Paystack transfer).
 r.post('/redeem', asyncHandler(async (req, res) => {
-  const { points, method, destination, bankCode, accountNumber } = req.body || {};
+  const { points, method, destination, bankCode, accountNumber, code, channel } = req.body || {};
   if (!isEligibleToEarn(req.user)) {
-    throw badRequest(`Cashout unlocks at ${EARN_MIN_FOLLOWERS} followers and ${EARN_MIN_REVIEWS} reviews. You have ${req.user.followers || 0} followers and ${req.user.reviewCount || 0} reviews.`);
+    throw badRequest(`Cashout unlocks after ${EARN_MIN_REVIEWS} reviews. You have ${req.user.reviewCount || 0}.`);
   }
+  // SMS/WhatsApp token verification (requirement 4).
+  const number = req.user.whatsapp || req.user.phone;
+  if (!number) throw badRequest('No phone/WhatsApp number on file for verification');
+  if (!code) throw badRequest('Enter the verification code sent to your number');
+  const v = await verifyOtp(channel === 'whatsapp' ? 'whatsapp' : 'phone', number, code);
+  if (!v.ok) throw badRequest(v.reason || 'Invalid verification code');
+
   if (!points || points <= 0) throw badRequest('Enter a points amount');
   if (points > (req.user.points || 0)) throw badRequest('Not enough points');
   if (!method || !destination) throw badRequest('Choose a payout destination');
@@ -101,13 +117,13 @@ r.post('/subscribe', asyncHandler(async (req, res) => {
   const { plan } = req.body || {};
   if (!PLANS[plan]) throw badRequest('Unknown plan');
 
-  // Free tier: downgrade immediately, no payment.
-  if (plan === 'starter') {
-    req.user.plan = 'starter';
+  // Free tier: switch immediately, no payment, funds no campaign.
+  if (plan === 'free') {
+    req.user.plan = 'free';
     req.user.planRenews = null;
     await req.user.save();
     await Subscription.updateMany({ creator: req.user._id, status: { $in: ['active', 'pending'] } }, { $set: { status: 'canceled', canceledAt: new Date() } });
-    return res.json({ plan: PLANS.starter, status: 'active' });
+    return res.json({ plan: PLANS.free, status: 'active' });
   }
 
   const reference = newReference('sub');
@@ -117,17 +133,16 @@ r.post('/subscribe', asyncHandler(async (req, res) => {
     email: req.user.email,
     amountNaira: PLANS[plan].price,
     reference,
-    metadata: { userId: String(req.user._id), plan, kind: 'subscription' },
+    metadata: { userId: String(req.user._id), plan, kind: 'campaign' },
     callbackUrl: env.paystackCallbackUrl,
   });
 
-  // In simulated mode (no Paystack key) activate right away for a smooth demo.
+  // In simulated mode (no Paystack key) activate the campaign right away.
   if (tx.simulated) {
-    const renews = await activatePlan(req.user, plan, { reference, providerRef: reference });
-    return res.json({ plan: PLANS[plan], status: 'active', simulated: true, checkoutUrl: tx.authorization_url, renews });
+    const camp = await activatePlan(req.user, plan, { reference, providerRef: reference });
+    return res.json({ plan: PLANS[plan], status: 'active', simulated: true, checkoutUrl: tx.authorization_url, ...camp });
   }
 
-  // Live: client opens checkoutUrl; activation happens on the charge.success webhook.
   res.status(202).json({ plan: PLANS[plan], status: 'pending', checkoutUrl: tx.authorization_url, reference });
 }));
 
@@ -141,7 +156,17 @@ r.get('/studio', asyncHandler(async (req, res) => {
   const watches = await Watch.countDocuments({ title: { $in: ids } });
   const reviews = await Review.countDocuments({ title: { $in: ids } });
   res.json({
-    studio: { name: req.user.name, plan: req.user.plan, planRenews: req.user.planRenews, avatarColor: req.user.avatarColor, logoUrl: req.user.logoUrl || null, channelUrl: req.user.channelUrl, genre: req.user.genre, country: req.user.country },
+    studio: {
+      name: req.user.name, plan: req.user.plan, planName: getPlan(req.user.plan).name,
+      avatarColor: req.user.avatarColor, logoUrl: req.user.logoUrl || null,
+      channelUrl: req.user.channelUrl, genre: req.user.genre, country: req.user.country,
+      campaignPool: req.user.campaignPool || 0,
+      campaignRemaining: req.user.campaignRemaining || 0,
+      campaignExhausted: (req.user.campaignRemaining || 0) <= 0 && req.user.plan !== 'free',
+      canEdit: !!getPlan(req.user.plan).canEdit,
+      analytics: !!getPlan(req.user.plan).analytics,
+      activeTitleLimit: getPlan(req.user.plan).activeTitles,
+    },
     stats: { avgScore: avg, watches, reviews },
     titles: titles.map((t) => ({ ...t, id: t._id })),
   });
@@ -165,6 +190,19 @@ r.post('/avatar', asyncHandler(async (req, res) => {
   req.user.avatarUrl = avatarUrl || null;
   await req.user.save();
   res.json({ avatarUrl: req.user.avatarUrl });
+}));
+
+// Register / remove an Expo push token for this device (requirement 14).
+r.post('/push-token', asyncHandler(async (req, res) => {
+  const { token } = req.body || {};
+  if (!token || typeof token !== 'string') throw badRequest('token is required');
+  await User.updateOne({ _id: req.user._id }, { $addToSet: { pushTokens: token } });
+  res.json({ ok: true });
+}));
+r.delete('/push-token', asyncHandler(async (req, res) => {
+  const { token } = req.body || {};
+  if (token) await User.updateOne({ _id: req.user._id }, { $pull: { pushTokens: token } });
+  res.json({ ok: true });
 }));
 
 export default r;

@@ -1,13 +1,17 @@
 import { User } from '../models/User.js';
 import { Subscription } from '../models/Subscription.js';
 import { Cashout } from '../models/Cashout.js';
-import { PLANS, PAYOUT_POOL_RATIO } from '../points.js';
+import { PLANS, PAYOUT_POOL_RATIO, campaignPool, getPlan } from '../points.js';
 
-// Activate a creator's plan (used by the simulated path and by the webhook).
+// Activate a creator's CAMPAIGN package (simulated path + webhook). Buying a plan
+// tops up the creator's points pool by campaignPool(plan); the pool then depletes
+// as critics earn from their titles. Not a monthly subscription.
 export async function activatePlan(user, plan, { reference = null, providerRef = null } = {}) {
-  const renewsAt = new Date(Date.now() + 30 * 864e5);
+  const pool = campaignPool(plan);
   user.plan = plan;
-  user.planRenews = renewsAt;
+  user.campaignRemaining = (user.campaignRemaining || 0) + pool;
+  user.campaignPool = user.campaignRemaining; // denominator resets to full after a top-up
+  user.planRenews = null;
   await user.save();
 
   await Subscription.updateMany(
@@ -15,10 +19,10 @@ export async function activatePlan(user, plan, { reference = null, providerRef =
     { $set: { status: 'canceled', canceledAt: new Date() } }
   );
   await Subscription.create({
-    creator: user._id, plan, price: PLANS[plan].price, status: 'active',
-    provider: providerRef ? 'paystack' : 'manual', providerRef, reference, renewsAt,
+    creator: user._id, plan, price: getPlan(plan).price, status: 'active',
+    provider: providerRef ? 'paystack' : 'manual', providerRef, reference,
   });
-  return renewsAt;
+  return { campaignPool: user.campaignPool, campaignRemaining: user.campaignRemaining };
 }
 
 // Webhook: a checkout succeeded -> activate the matching pending subscription.
@@ -54,7 +58,7 @@ export async function settleCashout({ reference, transferCode }, outcome) {
 
 export async function getSubscriptionRevenue() {
   const active = await Subscription.find({ status: 'active' }).select('plan price').lean();
-  return active.reduce((sum, s) => sum + (s.price || PLANS[s.plan]?.price || 0), 0);
+  return active.reduce((sum, s) => sum + (s.price || getPlan(s.plan)?.price || 0), 0);
 }
 
 export async function getPayoutPool() {

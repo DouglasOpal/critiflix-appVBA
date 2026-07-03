@@ -64,7 +64,7 @@ export default function Browse({ navigation }) {
   const ListRow = (m) => (
     <Pressable key={m.id} onPress={() => open(m.id)}>
       <Card style={{ padding: 11, marginBottom: 11, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-        <View style={{ width: 60, height: 80, borderRadius: 11, backgroundColor: colors.navy2, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 60, height: 90, borderRadius: 11, backgroundColor: colors.navy2, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
           {mediaUrl(m.posterSmall || m.posterLarge) ? (
             <Image source={{ uri: mediaUrl(m.posterSmall || m.posterLarge) }} style={{ position: 'absolute', width: '100%', height: '100%' }} resizeMode="cover" />
           ) : Icons.youtube(11)}

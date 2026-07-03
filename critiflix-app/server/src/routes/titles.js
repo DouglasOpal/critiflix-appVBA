@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { Title } from '../models/Title.js';
+import { User } from '../models/User.js';
 import { Review } from '../models/Review.js';
 import { Watch } from '../models/Watch.js';
 import { PointsLedger } from '../models/PointsLedger.js';
@@ -8,13 +9,13 @@ import { badRequest, notFound, conflict } from '../utils/ApiError.js';
 import { titleCode } from '../utils/ids.js';
 import { protect, requireRole } from '../middleware/auth.js';
 import { award } from '../services/pointsService.js';
-import { POINTS, PLANS, titleWatchPoints, runtimeToMinutes, WATCH_REQUIRED_PCT } from '../points.js';
+import { POINTS, PLANS, titleWatchPoints, runtimeToMinutes, WATCH_REQUIRED_PCT, getPlan, normalizePlan } from '../points.js';
 import { MAX_VIDEO_BYTES, MAX_TRAILER_SECONDS } from './uploads.js';
 
 const r = Router();
 
 const creatorLite = 'name code channelUrl avatarColor plan followers';
-const PLAN_WEIGHT = { starter: 1, pro: 2, studio: 3 };
+const PLAN_WEIGHT = { free: 1, curious: 2, growth: 3, premium: 4 };
 
 const shape = (t) => {
   const o = t.toObject ? t.toObject({ versionKey: false }) : t;
@@ -31,7 +32,7 @@ function rank(titles, sort) {
     const recency = Math.max(0, 1 - ageDays / 30);
     const rating = (t.score || 0) / 10;
     const trending = (t.watchCount || 0) / maxWatch;
-    const planW = PLAN_WEIGHT[t.creator?.plan] || 1;
+    const planW = PLAN_WEIGHT[normalizePlan(t.creator?.plan)] || 1;
     const priority = (t.featured ? 1000 : 0) + (t.priorityBoost || 0) * 10 + planW * 2 + rating * 5 + recency * 3 + trending * 4;
     return { t, rating, trending, priority, createdAt: new Date(t.createdAt).getTime() };
   });
@@ -62,10 +63,17 @@ r.get('/:id', protect(false), asyncHandler(async (req, res) => {
   const isOwner = req.user && String(t.creator?._id) === String(req.user._id);
   const isAdmin = req.user && req.user.role === 'admin';
   if (!VISIBLE.includes(t.status) && !isOwner && !isAdmin) throw notFound('Title not found');
-  const reviews = await Review.find({ title: t._id }).populate('critic', 'name code rank avatarColor avatarUrl').sort({ createdAt: -1 }).lean();
+  const rawReviews = await Review.find({ title: t._id }).populate('critic', 'name code rank avatarColor avatarUrl').sort({ createdAt: -1 }).lean();
+  const uid = req.user ? String(req.user._id) : null;
+  const reviews = rawReviews.map(({ likes = [], ...rv }) => ({
+    ...rv, id: rv._id,
+    likeCount: rv.likeCount || likes.length || 0,
+    liked: uid ? likes.map(String).includes(uid) : false,
+  }));
   let watch = null;
   if (req.user) watch = await Watch.findOne({ critic: req.user._id, title: t._id }).lean();
-  res.json({ ...t, id: t._id, reward: t.watchPoints, requiredWatchPct: WATCH_REQUIRED_PCT, reviews, watch });
+  const canManageReviews = isOwner || isAdmin; // creators manage their own titles' reviews
+  res.json({ ...t, id: t._id, reward: t.watchPoints, requiredWatchPct: WATCH_REQUIRED_PCT, reviews, watch, canManageReviews });
 }));
 
 // Creator submits a title. watchPoints are set from plan + film length (50–150).
@@ -81,12 +89,21 @@ r.post('/', protect(), requireRole('creator'), asyncHandler(async (req, res) => 
   if (trailerDurationSec && trailerDurationSec > MAX_TRAILER_SECONDS) throw badRequest('Trailer must be 3 minutes or shorter');
   if (trailerSizeBytes && trailerSizeBytes > MAX_VIDEO_BYTES) throw badRequest('Trailer must be 200MB or smaller');
 
-  const plan = PLANS[req.user.plan] || PLANS.starter;
+  const plan = getPlan(req.user.plan);
   const active = await Title.countDocuments({ creator: req.user._id, status: { $ne: 'ended' } });
   if (active >= plan.activeTitles) throw badRequest(`Your ${plan.name} plan allows ${plan.activeTitles} active title(s). Upgrade to add more.`);
 
+  // Free (starter) plan: one-time lifetime cap of 3 uploads (requirement 7).
+  if (normalizePlan(req.user.plan) === 'free') {
+    if ((req.user.freeUploadsUsed || 0) >= (plan.maxLifetimeUploads || 3)) {
+      throw badRequest('Your free plan allows a one-time upload of 3 titles. Upgrade to a paid plan to upload more.');
+    }
+  }
+
   const runtimeMinutes = runtimeToMinutes(runtime);
-  const watchPoints = titleWatchPoints(req.user.plan, runtimeMinutes);
+  const watchPoints = titleWatchPoints(req.user.plan, runtimeMinutes, 0);
+  // Free-plan titles can't be edited for 3 months after upload (requirement 7).
+  const editLockUntil = normalizePlan(req.user.plan) === 'free' ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) : null;
 
   const t = await Title.create({
     code: titleCode(), creator: req.user._id,
@@ -94,8 +111,9 @@ r.post('/', protect(), requireRole('creator'), asyncHandler(async (req, res) => 
     trailerUrl, movieUrl,
     trailerDurationSec: trailerDurationSec || null, trailerSizeBytes: trailerSizeBytes || null,
     posterSmall: posterSmall || null, posterLarge: posterLarge || null,
-    status: 'pending', watchPoints, // awaits admin approval before users can see it
+    status: 'pending', watchPoints, editLockUntil, // awaits admin approval before users can see it
   });
+  if (normalizePlan(req.user.plan) === 'free') { req.user.freeUploadsUsed = (req.user.freeUploadsUsed || 0) + 1; await req.user.save(); }
   await t.populate('creator', creatorLite);
   res.status(201).json(shape(t));
 }));
@@ -107,6 +125,11 @@ r.patch('/:id', protect(), requireRole('creator'), asyncHandler(async (req, res)
   if (!t) throw notFound('Title not found');
   if (String(t.creator) !== String(req.user._id)) throw badRequest('You can only edit your own titles');
   if (t.status === 'delisted') throw badRequest('This title was delisted by an admin and can’t be edited');
+  // Free-plan titles are locked from edits for 3 months; paid plans can always edit (requirements 7 & 8).
+  if (normalizePlan(req.user.plan) === 'free' && t.editLockUntil && new Date() < new Date(t.editLockUntil)) {
+    const until = new Date(t.editLockUntil).toLocaleDateString();
+    throw badRequest(`Free-plan titles can't be edited until ${until}. Upgrade to a paid plan to edit now.`);
+  }
 
   const { title, synopsis, genre, runtime, trailerUrl, movieUrl, posterSmall, posterLarge } = req.body || {};
   if (synopsis !== undefined) {
@@ -115,7 +138,7 @@ r.patch('/:id', protect(), requireRole('creator'), asyncHandler(async (req, res)
   }
   if (title !== undefined) t.title = title;
   if (genre !== undefined) t.genre = genre;
-  if (runtime !== undefined) { t.runtime = runtime; t.runtimeMinutes = runtimeToMinutes(runtime); t.watchPoints = titleWatchPoints(req.user.plan, t.runtimeMinutes); }
+  if (runtime !== undefined) { t.runtime = runtime; t.runtimeMinutes = runtimeToMinutes(runtime); t.watchPoints = titleWatchPoints(req.user.plan, t.runtimeMinutes, t.boost || 0); }
   if (trailerUrl !== undefined) t.trailerUrl = trailerUrl;
   if (movieUrl !== undefined) t.movieUrl = movieUrl;
   if (posterSmall !== undefined) t.posterSmall = posterSmall;
@@ -157,7 +180,17 @@ r.post('/:id/watch', protect(), requireRole('critic'), asyncHandler(async (req, 
 
   let awarded = 0;
   if (w.completed && !w.awarded) {
-    awarded = await award(req.user, 'watch', t.watchPoints, t.title, t._id);
+    // Reward is funded by the creator's CAMPAIGN pool and depletes it. Free-plan
+    // titles (watchPoints===0) and exhausted campaigns award nothing.
+    if (t.watchPoints > 0) {
+      const creator = await User.findById(t.creator);
+      const grant = Math.min(t.watchPoints, Math.max(0, creator?.campaignRemaining || 0));
+      if (grant > 0) {
+        awarded = await award(req.user, 'watch', grant, t.title, t._id);
+        creator.campaignRemaining -= grant;
+        await creator.save();
+      }
+    }
     w.awarded = true;
     t.watchCount = (t.watchCount || 0) + 1;
     await t.save();
@@ -202,17 +235,48 @@ r.post('/:id/review', protect(), requireRole('critic'), asyncHandler(async (req,
 
   // reviewCount counts toward earning eligibility and must grow even pre-eligibility.
   req.user.reviewCount = (req.user.reviewCount || 0) + 1;
-  // Award review/rating points ONCE per title — a repeat review yields no points.
+  // Award review/rating points ONCE per title — funded by the creator's campaign
+  // pool (and only for paid-plan titles). Depletes the pool; nothing when exhausted.
   const alreadyAwarded = await PointsLedger.exists({ user: req.user._id, title: t._id, type: { $in: ['review', 'rating'] } });
   let earned = 0;
-  if (!alreadyAwarded) {
-    earned =
-      (await award(req.user, 'review', POINTS.review, t.title, t._id)) +
-      (await award(req.user, 'rating', POINTS.rating, t.title, t._id));
+  if (!alreadyAwarded && t.watchPoints > 0) {
+    const creator = await User.findById(t.creator);
+    let pool = Math.max(0, creator?.campaignRemaining || 0);
+    const grantReview = Math.min(POINTS.review, pool); pool -= grantReview;
+    const grantRating = Math.min(POINTS.rating, pool); pool -= grantRating;
+    if (grantReview > 0) earned += await award(req.user, 'review', grantReview, t.title, t._id);
+    if (grantRating > 0) earned += await award(req.user, 'rating', grantRating, t.title, t._id);
+    if (creator && (grantReview + grantRating) > 0) { creator.campaignRemaining = pool; await creator.save(); }
   }
   await req.user.save();
 
   res.status(201).json({ review, awarded: earned, score: t.score, balance: req.user.points, reviewCount: req.user.reviewCount });
+}));
+
+// Like / unlike a review (critics and creators). Toggles.
+r.post('/:id/reviews/:reviewId/like', protect(), asyncHandler(async (req, res) => {
+  const rv = await Review.findById(req.params.reviewId);
+  if (!rv) throw notFound('Review not found');
+  const uid = String(req.user._id);
+  const has = (rv.likes || []).map(String).includes(uid);
+  rv.likes = has ? rv.likes.filter((x) => String(x) !== uid) : [...(rv.likes || []), req.user._id];
+  rv.likeCount = rv.likes.length;
+  await rv.save();
+  res.json({ liked: !has, likeCount: rv.likeCount });
+}));
+
+// Creator deletes a review on their OWN title (requirement 2).
+r.delete('/:id/reviews/:reviewId', protect(), requireRole('creator'), asyncHandler(async (req, res) => {
+  const t = await Title.findById(req.params.id);
+  if (!t) throw notFound('Title not found');
+  if (String(t.creator) !== String(req.user._id)) throw badRequest('You can only manage reviews on your own titles');
+  const rv = await Review.findOneAndDelete({ _id: req.params.reviewId, title: t._id });
+  if (!rv) throw notFound('Review not found');
+  const agg = await Review.aggregate([{ $match: { title: t._id } }, { $group: { _id: '$title', avg: { $avg: '$score' }, count: { $sum: 1 } } }]);
+  t.reviewCount = agg[0]?.count || 0;
+  t.score = agg[0] ? Math.round(agg[0].avg * 10) / 10 : null;
+  await t.save();
+  res.json({ ok: true, reviewCount: t.reviewCount, score: t.score });
 }));
 
 export default r;

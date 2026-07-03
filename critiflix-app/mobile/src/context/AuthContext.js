@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { registerForPush } from '../services/push';
 import { api, loadTokens, setTokens, getRefreshToken } from '../api';
 
 const Ctx = createContext(null);
@@ -13,6 +14,9 @@ export const DEMO = {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+
+  // Register this device for push notifications once a user is signed in.
+  useEffect(() => { if (user) registerForPush(); }, [user?.id || user?._id]);
   const [ready, setReady] = useState(false);
   const [pendingOnboard, setPendingOnboard] = useState(false);
 

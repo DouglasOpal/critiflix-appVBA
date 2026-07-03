@@ -14,6 +14,7 @@ const userSchema = new Schema(
     phone: { type: String, default: null, trim: true, index: true, sparse: true },
     whatsapp: { type: String, default: null, trim: true, index: true, sparse: true }, // for promos/alerts
     avatarUrl: { type: String, default: null },        // uploaded profile picture
+    pushTokens: { type: [String], default: [] },       // Expo push tokens (per device)
     passwordHash: { type: String, required: true, select: false }, // never returned by default
     emailVerified: { type: Boolean, default: false },
     phoneVerified: { type: Boolean, default: false },
@@ -36,13 +37,16 @@ const userSchema = new Schema(
     referredBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
 
     // ---- creator (studio) fields ----
-    channelUrl: { type: String, default: null },
+    channelUrl: { type: String, default: null, index: true, sparse: true }, // deduped across platform
+    freeUploadsUsed: { type: Number, default: 0 },     // lifetime uploads on the free (starter) plan
     otherUrl: { type: String, default: null },
     country: { type: String, default: 'Nigeria' },
     genre: { type: String, default: null },
     logoUrl: { type: String, default: null },
-    plan: { type: String, enum: ['starter', 'pro', 'studio'], default: 'starter' },
-    planRenews: { type: Date, default: null },
+    plan: { type: String, enum: ['free', 'curious', 'growth', 'premium', 'starter', 'pro', 'studio'], default: 'free' },
+    planRenews: { type: Date, default: null },        // legacy (campaign model has no monthly renewal)
+    campaignPool: { type: Number, default: 0 },       // points funded by the current campaign (denominator)
+    campaignRemaining: { type: Number, default: 0 },  // points left; depletes as critics earn from this creator's titles
     balance: { type: Number, default: 0 },            // creator earnings (₦)
 
     lastLoginAt: { type: Date, default: null },

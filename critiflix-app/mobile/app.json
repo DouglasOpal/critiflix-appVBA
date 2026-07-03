@@ -16,7 +16,10 @@
     },
     "android": {
       "package": "app.critiflix",
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro"
@@ -28,7 +31,18 @@
           "photosPermission": "CritiFlix needs access to your library to upload a trailer and poster."
         }
       ],
-      "expo-video"
-    ]
+      "expo-video",
+      [
+        "expo-notifications",
+        {
+          "color": "#E50914"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "09b0f395-3c2d-4fc4-9c6e-162951c7d3e7"
+      }
+    }
   }
 }

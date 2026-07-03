@@ -22,8 +22,8 @@ export default function Dashboard() {
       >
         <Pad style={{ paddingBottom: 18 }}>
           <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 13, padding: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11 }}>Plan · <Text style={{ color: '#fff', fontWeight: '700' }}>{(data?.studio?.plan || 'starter').toUpperCase()}</Text></Text>
-            <Chip label={(data?.studio?.plan && data.studio.plan !== 'starter') ? 'Priority placement' : 'Standard listing'} tone={(data?.studio?.plan && data.studio.plan !== 'starter') ? 'red' : 'navy'} />
+            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11 }}>Package · <Text style={{ color: '#fff', fontWeight: '700' }}>{(data?.studio?.planName || data?.studio?.plan || 'Free').toUpperCase()}</Text></Text>
+            <Chip label={data?.studio?.campaignExhausted ? 'Campaign exhausted' : (data?.studio?.campaignRemaining > 0 ? `${(data.studio.campaignRemaining).toLocaleString()} pts left` : 'Free package')} tone={data?.studio?.campaignExhausted ? 'navy' : (data?.studio?.campaignRemaining > 0 ? 'red' : 'navy')} />
           </View>
         </Pad>
       </TopBand>

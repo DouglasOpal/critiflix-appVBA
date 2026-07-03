@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, Keyboard } from 'react-native';
 import { colors } from '../../theme/tokens';
 import Logo from '../../components/Logo';
 import { Button, Card } from '../../components/ui';
@@ -10,11 +10,16 @@ import { api } from '../../api';
 // server re-verifies as it creates the account. Works for critics and creators.
 export default function ConfirmAccount({ route, navigation }) {
   const { register, refresh } = useAuth();
-  const { pending, channel = 'email', destination, devCode: initialDev } = route.params || {};
+  const { pending, channel = 'email', destination } = route.params || {};
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
-  const [devCode, setDevCode] = useState(initialDev || null);
   const [seconds, setSeconds] = useState(30);
+  const [kb, setKb] = useState(0);
+  useEffect(() => {
+    const sh = Keyboard.addListener('keyboardDidShow', (e) => setKb(e.endCoordinates?.height || 0));
+    const hd = Keyboard.addListener('keyboardDidHide', () => setKb(0));
+    return () => { sh.remove(); hd.remove(); };
+  }, []);
 
   useEffect(() => {
     if (seconds <= 0) return;
@@ -24,8 +29,7 @@ export default function ConfirmAccount({ route, navigation }) {
 
   const resend = async () => {
     try {
-      const res = await api.otpRequest(channel, destination);
-      setDevCode(res.devCode || null);
+      await api.otpRequest(channel, destination);
       setSeconds(30);
       Alert.alert('Code sent', `A new code is on its way to ${destination}.`);
     } catch (e) { Alert.alert('Could not resend', e.message); }
@@ -52,15 +56,14 @@ export default function ConfirmAccount({ route, navigation }) {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.paper }}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: Platform.OS === 'android' ? kb : 0 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
       <View style={styles.hero}>
         <Logo size={56} />
-        <Text style={styles.brand}>Confirm your {channel === 'phone' ? 'number' : 'email'}</Text>
+        <Text style={styles.brand}>Confirm your {channel === 'whatsapp' ? 'WhatsApp' : channel === 'phone' ? 'number' : 'email'}</Text>
         <Text style={styles.sub}>We sent a 6-digit code to {destination}. Enter it to finish creating your account.</Text>
       </View>
 
       <View style={styles.sheet}>
-        {devCode ? <Text style={styles.dev}>Dev code: {devCode}</Text> : null}
         <Card style={styles.field}>
           <TextInput
             placeholder="••••••" placeholderTextColor={colors.mist2}
@@ -75,7 +78,7 @@ export default function ConfirmAccount({ route, navigation }) {
             {seconds > 0 ? `Resend code in ${seconds}s` : 'Resend code'}
           </Text>
         </Pressable>
-        <Pressable onPress={() => navigation.goBack()}><Text style={styles.link}>Use a different {channel === 'phone' ? 'number' : 'email'}</Text></Pressable>
+        <Pressable onPress={() => navigation.goBack()}><Text style={styles.link}>Use a different {channel === 'email' ? 'email' : 'number'}</Text></Pressable>
       </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -4,7 +4,7 @@ const { Schema, model } = mongoose;
 // One-time passcodes for email/phone verification + passwordless login.
 const otpSchema = new Schema(
   {
-    channel: { type: String, enum: ['email', 'phone'], required: true },
+    channel: { type: String, enum: ['email', 'phone', 'whatsapp'], required: true },
     destination: { type: String, required: true, lowercase: true, trim: true, index: true },
     codeHash: { type: String, required: true },          // sha256 of the 6-digit code
     attempts: { type: Number, default: 0 },

@@ -23,11 +23,10 @@ export const env = {
   paystackPublic: process.env.PAYSTACK_PUBLIC_KEY || '',
   paystackCallbackUrl: process.env.PAYSTACK_CALLBACK_URL || 'http://localhost:4000/api/me/subscribe/callback',
 
-  // Twilio (optional — SMS OTP + WhatsApp promotions; simulate when unset)
-  twilioSid: process.env.TWILIO_ACCOUNT_SID || '',
-  twilioToken: process.env.TWILIO_AUTH_TOKEN || '',
-  twilioFrom: process.env.TWILIO_FROM || '',                       // SMS sender, e.g. +12025550123
-  twilioWhatsappFrom: process.env.TWILIO_WHATSAPP_FROM || '',      // e.g. whatsapp:+14155238886 (sandbox)
+  // Termii (SMS tokens + WhatsApp promotions; simulate when unset)
+  termiiApiKey: process.env.TERMII_API_KEY || '',
+  termiiSenderId: process.env.TERMII_SENDER_ID || '',              // approved Sender ID (e.g. CritiFlix)
+  termiiBaseUrl: process.env.TERMII_BASE_URL || 'https://api.ng.termii.com'
 };
 
 // Warn (don't crash) if running with insecure defaults outside dev.

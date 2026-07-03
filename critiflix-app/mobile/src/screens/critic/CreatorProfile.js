@@ -43,7 +43,7 @@ export default function CreatorProfile({ route, navigation }) {
                 {followers.toLocaleString()} followers · {c.titles?.length || 0} titles
               </Text>
             </View>
-            <Chip label={(c.plan || 'starter').toUpperCase()} tone={c.plan === 'starter' ? 'navy' : 'red'} />
+            <Chip label={({ starter:'FREE', pro:'CURIOUS', studio:'GROWTH' }[c.plan] || (c.plan || 'free').toUpperCase())} tone={(!c.plan || c.plan === 'free' || c.plan === 'starter') ? 'navy' : 'red'} />
           </View>
         </Pad>
       </TopBand>

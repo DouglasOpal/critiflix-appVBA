@@ -8,10 +8,13 @@ import { api } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 
 const FEATURES = {
-  starter: ['1 active title', 'Standard listing'],
-  pro: ['10 active titles', 'Promo boosts + WhatsApp/FB', 'Featured in Now Showing'],
-  studio: ['Unlimited titles', 'Priority placement + analytics', 'Top-of-feed placement'],
+  free:    ['3 titles (one-time)', 'Funds no points', 'Editing locked 3 months'],
+  curious: ['5 active titles', 'Editing + analytics', 'Featured placement'],
+  growth:  ['15 active titles', 'Bigger points campaign', 'Featured + analytics'],
+  premium: ['Unlimited titles', 'Largest points campaign', 'Top-of-feed placement'],
 };
+// A campaign funds a points pool = 2.5 × price that critics draw from as they watch/review.
+const poolFor = (price) => Math.round((0.5 * price) / 0.2);
 
 export default function Plans({ navigation, route }) {
   const { finishOnboard, refresh } = useAuth();
@@ -20,14 +23,14 @@ export default function Plans({ navigation, route }) {
 
   useEffect(() => {
     api.config().then((c) => {
-      const order = ['starter', 'pro', 'studio'];
-      setPlans(order.map((id) => ({ ...c.plans[id], features: FEATURES[id], popular: id === 'pro' })));
+      const order = ['free', 'curious', 'growth', 'premium'];
+      setPlans(order.map((id) => ({ ...c.plans[id], features: FEATURES[id], popular: id === 'growth' })));
     }).catch(() => {});
   }, []);
 
   const choose = async (plan) => {
     try {
-      const res = plan !== 'starter' ? await api.subscribe(plan) : await api.subscribe('starter');
+      const res = await api.subscribe(plan);
       if (res?.status === 'pending' && res.checkoutUrl) {
         Linking.openURL(res.checkoutUrl).catch(() => {});
         Alert.alert('Complete payment', 'Finish checkout in your browser. Your plan activates as soon as payment is confirmed.');
@@ -44,7 +47,7 @@ export default function Plans({ navigation, route }) {
       <TopBand title="Pick a plan" subtitle="Subscribe to publish" onBack={onboarding ? undefined : () => navigation.goBack()} />
       <Pad style={{ marginTop: 14 }}>
         <Text style={{ fontSize: 12, color: colors.mist, marginBottom: 14, lineHeight: 18 }}>
-          Subscription is for creators only. It unlocks more uploads and priority placement so critics discover your films first.
+          Campaign packages are for creators. Each package is a one-off that funds a pool of points critics earn by watching &amp; reviewing your films. When the pool runs out, renew or move up to a bigger package — it's consumption-based, not monthly.
         </Text>
         {plans.map((p) => (
           <Card key={p.id} style={[styles.plan, p.popular && styles.popular]}>
@@ -55,7 +58,7 @@ export default function Plans({ navigation, route }) {
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
                 <Text style={styles.price}>{fmt(p.price)}</Text>
-                {p.price ? <Text style={styles.per}>/mo</Text> : null}
+                {p.price ? <Text style={styles.per}>campaign</Text> : null}
               </View>
             </View>
             {p.features.map((f) => (
@@ -65,8 +68,9 @@ export default function Plans({ navigation, route }) {
                 <Text style={{ fontSize: 12, color: colors.mist }}>{f}</Text>
               </View>
             ))}
+            {p.price > 0 ? <Text style={{ fontSize: 11.5, color: colors.red, fontWeight: '700', marginTop: 8 }}>Funds ~{poolFor(p.price).toLocaleString()} points for critics</Text> : null}
             <Button
-              title={p.price === 0 ? 'Start free' : `Subscribe to ${p.name}`}
+              title={p.price === 0 ? 'Start free' : `Buy ${p.name} campaign`}
               variant={p.popular ? 'red' : 'ghost'}
               onPress={() => choose(p.id)}
               style={{ marginTop: 11, paddingVertical: 11 }}

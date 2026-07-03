@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { colors } from '../../theme/tokens';
 import Logo, { BrandPattern } from '../../components/Logo';
 import { Button, Card } from '../../components/ui';
@@ -15,6 +15,7 @@ export default function SignIn({ navigation, route }) {
   const [email, setEmail] = useState(route?.params?.verified?.channel === 'email' ? route.params.verified.destination : '');
   const [password, setPassword] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [otpChannel, setOtpChannel] = useState('phone'); // 'phone' (SMS) | 'whatsapp'
   const [busy, setBusy] = useState(false);
   const creating = mode === 'create';
 
@@ -25,15 +26,15 @@ export default function SignIn({ navigation, route }) {
         await login(email.trim(), password);
       } else if (role === 'creator') {
         if (!whatsapp || whatsapp.replace(/[^0-9]/g, '').length < 7) throw new Error('Enter a valid WhatsApp number');
-        navigation.navigate('RegisterStudio', { email: email.trim(), password, name, whatsapp: whatsapp.trim() });
+        navigation.navigate('RegisterStudio', { email: email.trim(), password, name, whatsapp: whatsapp.trim(), otpChannel });
       } else {
         if (!name || !email || password.length < 8) throw new Error('Name, email and an 8+ character password are required');
         if (!whatsapp || whatsapp.replace(/[^0-9]/g, '').length < 7) throw new Error('Enter a valid WhatsApp number');
-        // confirm the email before the account is created
-        const res = await api.otpRequest('email', email.trim());
+        // send an OTP to the user's number via their chosen channel (SMS or WhatsApp)
+        await api.otpRequest(otpChannel, whatsapp.trim());
         navigation.navigate('ConfirmAccount', {
           pending: { role: 'critic', name, email: email.trim(), password, whatsapp: whatsapp.trim() },
-          channel: 'email', destination: email.trim(), devCode: res.devCode,
+          channel: otpChannel, destination: whatsapp.trim(),
         });
       }
     } catch (e) { Alert.alert(creating ? 'Could not create account' : 'Sign in failed', e.message); }
@@ -50,7 +51,7 @@ export default function SignIn({ navigation, route }) {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.paper }}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: Platform.OS === 'android' ? kb : 0 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
       <View style={styles.hero}>
         <BrandPattern />
         <View style={styles.glow} />
@@ -87,7 +88,19 @@ export default function SignIn({ navigation, route }) {
         )}
         <Card style={styles.field}><TextInput placeholder="Email address" placeholderTextColor={colors.mist2} style={styles.input} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} /></Card>
         {creating && (
-          <Card style={styles.field}><TextInput placeholder="WhatsApp number (e.g. +234…)" placeholderTextColor={colors.mist2} style={styles.input} value={whatsapp} onChangeText={setWhatsapp} keyboardType="phone-pad" autoCapitalize="none" /></Card>
+          <Card style={styles.field}><TextInput placeholder="Phone / WhatsApp number (e.g. +234…)" placeholderTextColor={colors.mist2} style={styles.input} value={whatsapp} onChangeText={setWhatsapp} keyboardType="phone-pad" autoCapitalize="none" /></Card>
+        )}
+        {creating && (
+          <View style={{ marginBottom: 11 }}>
+            <Text style={{ fontSize: 11.5, color: colors.mist2, marginBottom: 6, marginLeft: 2 }}>Send my verification code by:</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {[['phone', 'SMS'], ['whatsapp', 'WhatsApp']].map(([k, lbl]) => (
+                <Pressable key={k} onPress={() => setOtpChannel(k)} style={{ flex: 1, paddingVertical: 11, borderRadius: 10, alignItems: 'center', backgroundColor: otpChannel === k ? colors.navy : '#fff', borderWidth: 1, borderColor: otpChannel === k ? colors.navy : colors.line }}>
+                  <Text style={{ color: otpChannel === k ? '#fff' : colors.navy, fontWeight: '700', fontSize: 12.5 }}>{lbl}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
         )}
         {!(creating && role === 'creator') && (
           <Card style={styles.field}><TextInput placeholder="Password" placeholderTextColor={colors.mist2} style={styles.input} value={password} onChangeText={setPassword} secureTextEntry /></Card>

@@ -1,35 +1,33 @@
 import crypto from 'crypto';
 import { Otp } from '../models/Otp.js';
-import { sendSms, smsEnabled } from './twilio.js';
+import { sendSms, smsEnabled, sendWhatsApp, whatsappEnabled } from './termii.js';
 
-// OTP delivery. Phone codes go out via Twilio SMS when Twilio creds are set;
-// otherwise (and for email until an email provider is added) codes are
-// "simulated": logged server-side and returned as devCode so the flow stays testable.
+// OTP delivery via Termii. 'phone' -> SMS (dnd), 'whatsapp' -> WhatsApp.
+// Codes are NEVER returned to the client (requirement 3) — only delivered and,
+// when no provider is configured, logged server-side for local debugging.
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+const norm = (channel, d) => (channel === 'email' ? String(d).toLowerCase() : String(d).trim());
 
 export async function sendOtp(channel, destination) {
-  const dest = destination.toLowerCase();
+  const dest = norm(channel, destination);
   const code = String(Math.floor(100000 + Math.random() * 900000));
   await Otp.deleteMany({ channel, destination: dest, consumed: false });
   await Otp.create({ channel, destination: dest, codeHash: sha(code), expiresAt: new Date(Date.now() + 10 * 60000) });
 
-  // Real delivery: SMS via Twilio for the phone channel.
-  if (channel === 'phone' && smsEnabled) {
-    try {
-      await sendSms(destination, `Your CritiFlix code is ${code}. It expires in 10 minutes.`);
-      return { simulated: false };
-    } catch (e) {
-      console.error('[otp] Twilio SMS failed, falling back to simulated:', e.message);
-    }
+  const body = `Your CritiFlix code is ${code}. It expires in 10 minutes.`;
+  try {
+    if (channel === 'whatsapp' && whatsappEnabled) { await sendWhatsApp(destination, body); return { sent: true }; }
+    if (channel === 'phone' && smsEnabled) { await sendSms(destination, body); return { sent: true }; }
+  } catch (e) {
+    console.error(`[otp] Termii ${channel} failed:`, e.message);
   }
-
-  // Simulated: log + return the code so testing works without a provider.
+  // No provider configured: log only (code is never sent back to the app).
   console.log(`[otp] ${channel} -> ${destination}: ${code}`);
-  return { simulated: true, devCode: code };
+  return { sent: false };
 }
 
 export async function verifyOtp(channel, destination, code) {
-  const dest = destination.toLowerCase();
+  const dest = norm(channel, destination);
   const rec = await Otp.findOne({ channel, destination: dest, consumed: false }).sort({ createdAt: -1 });
   if (!rec) return { ok: false, reason: 'Request a code first' };
   if (rec.expiresAt < new Date()) return { ok: false, reason: 'That code has expired' };

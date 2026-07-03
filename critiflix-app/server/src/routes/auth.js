@@ -36,12 +36,12 @@ r.post('/register', asyncHandler(async (req, res) => {
     throw badRequest('A valid WhatsApp number is required');
   }
   if (!['critic', 'creator'].includes(role)) throw badRequest('Role must be critic or creator');
-  if (!['email', 'phone'].includes(channel)) throw badRequest('Confirmation channel must be email or phone');
+  if (!['email', 'phone', 'whatsapp'].includes(channel)) throw badRequest('Confirmation channel must be email, phone or whatsapp');
   if (await User.exists({ email: email.toLowerCase() })) throw badRequest('That email is already registered');
 
   // ---- Mandatory confirmation: a valid OTP for the chosen channel is required ----
-  const destination = channel === 'phone' ? phone : email;
-  if (!destination) throw badRequest('A phone number is required to confirm by SMS');
+  const destination = channel === 'whatsapp' ? whatsapp : channel === 'phone' ? (phone || whatsapp) : email;
+  if (!destination) throw badRequest('A number is required to confirm by SMS/WhatsApp');
   if (!code) throw badRequest('Enter the confirmation code we sent you');
   const confirm = await verifyOtp(channel, destination, code);
   if (!confirm.ok) throw badRequest(confirm.reason || 'That confirmation code is invalid');
@@ -50,7 +50,11 @@ r.post('/register', asyncHandler(async (req, res) => {
   if (role === 'creator') {
     const { channelUrl, otherUrl, country, genre, logoUrl } = req.body || {};
     if (!channelUrl) throw badRequest('Creators must provide a channel link');
-    Object.assign(creatorFields, { channelUrl, otherUrl, country, genre, logoUrl, plan: 'starter', status: 'pending' });
+    // A channel can only be registered once on the platform (requirement 9).
+    const norm = String(channelUrl).trim().toLowerCase().replace(/\/+$/, '');
+    const dupe = await User.findOne({ channelUrl: { $regex: `^${norm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?$`, $options: 'i' } }).lean();
+    if (dupe) throw badRequest('This channel is already registered on CritiFlix');
+    Object.assign(creatorFields, { channelUrl: String(channelUrl).trim(), otherUrl, country, genre, logoUrl, plan: 'free', status: 'pending' });
   }
 
   let referredBy = null;
@@ -157,6 +161,36 @@ r.post('/reset-password', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---- OTP-based password reset (SMS/WhatsApp) — requirement 4 -----------------
+// Step 1: send a code to the account's number via the chosen channel.
+r.post('/forgot-password/otp', asyncHandler(async (req, res) => {
+  const { email, channel = 'phone' } = req.body || {};
+  const ch = channel === 'whatsapp' ? 'whatsapp' : 'phone';
+  const user = isEmail(email) ? await User.findOne({ email: email.toLowerCase() }) : null;
+  if (user) {
+    const number = user.whatsapp || user.phone;
+    if (number) await sendOtp(ch, number);
+  }
+  // Always respond ok (don't reveal whether the account exists).
+  res.json({ ok: true, channel: ch });
+}));
+
+// Step 2: verify the code + set a new password.
+r.post('/reset-password/otp', asyncHandler(async (req, res) => {
+  const { email, code, password, channel = 'phone' } = req.body || {};
+  if (!isEmail(email) || !code || !strongEnough(password)) throw badRequest('Email, the code, and a new password (8+ chars) are required');
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user) throw badRequest('Invalid code');
+  const number = user.whatsapp || user.phone;
+  if (!number) throw badRequest('No phone/WhatsApp number on file');
+  const v = await verifyOtp(channel === 'whatsapp' ? 'whatsapp' : 'phone', number, code);
+  if (!v.ok) throw badRequest(v.reason || 'Invalid code');
+  user.passwordHash = await User.hashPassword(password);
+  await user.save();
+  await revokeAllForUser(user._id);
+  res.json({ ok: true });
+}));
+
 // ---- POST /auth/change-password (authenticated) -----------------------------
 r.post('/change-password', protect(), asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
@@ -173,10 +207,10 @@ r.post('/change-password', protect(), asyncHandler(async (req, res) => {
 // Email/phone OTP for verifying users + creators (and passwordless sign-in).
 r.post('/otp/request', asyncHandler(async (req, res) => {
   const { channel = 'email', destination } = req.body || {};
-  if (!['email', 'phone'].includes(channel)) throw badRequest('Choose email or phone');
+  if (!['email', 'phone', 'whatsapp'].includes(channel)) throw badRequest('Choose email, SMS or WhatsApp');
   if (!destination) throw badRequest('Enter your email or phone number');
-  const result = await sendOtp(channel, destination);
-  res.json({ sent: true, channel, ...(result.devCode ? { devCode: result.devCode } : {}) });
+  await sendOtp(channel, destination);
+  res.json({ sent: true, channel }); // code is delivered, never returned to the app
 }));
 
 r.post('/otp/verify', asyncHandler(async (req, res) => {

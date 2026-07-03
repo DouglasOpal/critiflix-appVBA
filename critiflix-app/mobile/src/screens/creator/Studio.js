@@ -12,7 +12,8 @@ import { api, mediaUrl } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import NotificationBell from '../../components/NotificationBell';
 
-const PLAN_LABEL = { starter: 'Starter · Free', pro: 'Pro · ₦7,500/mo', studio: 'Studio · ₦20,000/mo' };
+const PLAN_LABEL = { free: 'Free', curious: 'Curious · ₦7,500', growth: 'Growth · ₦30,000', premium: 'Premium · ₦75,000' };
+const normPlan = (p) => (['free','curious','growth','premium'].includes(p) ? p : ({ starter:'free', pro:'curious', studio:'growth' }[p] || 'free'));
 
 function Row({ label, value, onPress, last }) {
   return (
@@ -33,7 +34,10 @@ export default function Studio({ navigation }) {
   const load = useCallback(() => api.studio().then(setData).catch(() => {}), []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const plan = data?.studio?.plan || user?.plan || 'starter';
+  const plan = normPlan(data?.studio?.plan || user?.plan || 'free');
+  const remaining = data?.studio?.campaignRemaining || 0;
+  const poolTotal = data?.studio?.campaignPool || 0;
+  const exhausted = !!data?.studio?.campaignExhausted;
   const logoUrl = mediaUrl(data?.studio?.logoUrl || user?.logoUrl);
 
   // Pick + upload the studio/channel logo (square), then save it to the profile.
@@ -86,20 +90,32 @@ export default function Studio({ navigation }) {
           <Button title={busyLogo ? 'Uploading…' : logoUrl ? 'Change channel logo' : 'Upload channel logo'} variant="ghost" onPress={pickLogo} disabled={busyLogo} style={{ marginTop: 14, alignSelf: 'stretch' }} />
         </Card>
 
-        <Eyebrow tone="mist">Subscription</Eyebrow>
+        <Eyebrow tone="mist">Campaign package</Eyebrow>
         <Card style={{ padding: 16, marginTop: 8, marginBottom: 16 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <View>
               <Text style={{ fontWeight: '800', fontSize: 15, color: colors.navyInk }}>{PLAN_LABEL[plan]}</Text>
               <Text style={{ fontSize: 11, color: colors.mist2, marginTop: 3 }}>
-                {plan === 'starter' ? '1 active title · upgrade for priority placement' : 'Renews monthly · cancel anytime'}
+                {plan === 'free' ? 'One-time 3 uploads · funds no points' : 'Consumption-based · depletes as critics earn'}
               </Text>
             </View>
-            <Chip label={plan.toUpperCase()} tone="red" />
+            <Chip label={plan.toUpperCase()} tone={exhausted ? 'navy' : 'red'} />
           </View>
+          {plan !== 'free' ? (
+            <View style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
+                <Text style={{ fontSize: 11.5, color: colors.mist }}>Points remaining</Text>
+                <Text style={{ fontSize: 11.5, fontWeight: '800', color: exhausted ? colors.red : colors.navyInk }}>{remaining.toLocaleString()} / {poolTotal.toLocaleString()}</Text>
+              </View>
+              <View style={{ height: 7, borderRadius: 4, backgroundColor: colors.line, overflow: 'hidden' }}>
+                <View style={{ height: '100%', width: `${poolTotal ? Math.max(3, Math.round(remaining / poolTotal * 100)) : 0}%`, backgroundColor: exhausted ? colors.red : colors.wa }} />
+              </View>
+              {exhausted ? <Text style={{ fontSize: 11, color: colors.red, fontWeight: '700', marginTop: 7 }}>Campaign exhausted — renew or upgrade to keep rewarding critics.</Text> : null}
+            </View>
+          ) : null}
           <Button
-            title={plan === 'studio' ? 'Manage plan' : 'Upgrade plan'}
-            variant={plan === 'starter' ? 'red' : 'ghost'}
+            title={plan === 'free' ? 'Buy a campaign package' : exhausted ? 'Renew or upgrade' : 'Renew / change package'}
+            variant={(plan === 'free' || exhausted) ? 'red' : 'ghost'}
             onPress={() => navigation.navigate('Plans')}
           />
         </Card>
@@ -118,7 +134,7 @@ export default function Studio({ navigation }) {
           <View style={{ flex: 1 }}>
             <Text style={{ fontWeight: '700', fontSize: 13, color: colors.navyInk }}>Priority placement</Text>
             <Text style={{ fontSize: 11, color: colors.mist2, marginTop: 2 }}>
-              {plan === 'starter' ? 'Upgrade to surface higher in Browse' : 'Your plan ranks your titles higher in Browse'}
+              {plan === 'free' ? 'Buy a campaign to surface higher in Browse' : 'Your package ranks your titles higher in Browse'}
             </Text>
           </View>
         </Card>

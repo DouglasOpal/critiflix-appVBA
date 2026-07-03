@@ -29,6 +29,8 @@ const titleSchema = new Schema(
     // ---- platform curation (admin only) ----
     featured: { type: Boolean, default: false, index: true },   // hand-picked top placement
     priorityBoost: { type: Number, default: 0 },                // manual nudge in ranking
+    boost: { type: Number, default: 0, min: 0, max: 3 },        // 0-3, adds 0-15 watch points
+    editLockUntil: { type: Date, default: null },               // free-plan titles locked from edits for 3 months
 
     tags: { type: [String], default: [] },
   },

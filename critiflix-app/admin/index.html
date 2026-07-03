@@ -198,6 +198,7 @@ const SECTIONS = [
   {id:'subscriptions',label:'Subscriptions',sub:'Creator plans & revenue',icon:'M3 7h18v12H3zM3 11h18'},
   {id:'revenue',label:'Revenue',sub:'Income & payout pool',icon:'M3 17l6-6 4 4 8-8M21 7v6h-6'},
   {id:'cashouts',label:'Cashouts',sub:'Critic payouts',icon:'M12 1v22M5 8h9a3 3 0 010 6H7'},
+  {id:'reviews',label:'Reviews',sub:'Moderate comments & reviews',icon:'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'},
   {id:'announcements',label:'Messages',sub:'Promotional broadcasts',icon:'M4 4h16v12H7l-3 3z'},
   {id:'integrations',label:'Integrations',sub:'Connected services',icon:'M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1'},
 ];
@@ -219,7 +220,7 @@ function route(){
   const sec=SECTIONS.find(s=>s.id===id)||SECTIONS[0];
   renderNav(sec.id); $('#pageTitle').textContent=sec.label; $('#pageSub').textContent=sec.sub;
   $('#view').innerHTML='<div class="loading">Loading\u2026</div>';
-  ({dashboard:viewDashboard,titles:viewTitles,users:viewUsers,subscriptions:viewSubs,revenue:viewRevenue,cashouts:viewCashouts,announcements:viewAnnouncements,integrations:viewIntegrations}[sec.id])();
+  ({dashboard:viewDashboard,titles:viewTitles,users:viewUsers,subscriptions:viewSubs,revenue:viewRevenue,cashouts:viewCashouts,reviews:viewReviews,announcements:viewAnnouncements,integrations:viewIntegrations}[sec.id])();
 }
 
 /* ---------------- dashboard ---------------- */
@@ -288,13 +289,14 @@ async function viewTitles(){
     const rows = await api('/admin/titles');
     const pending = rows.filter(t=>t.status==='pending').length;
     $('#view').innerHTML = '<div class="panel">'+
+      '<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-ghost" id="dlStats">↓ Download rating/scoring stats (CSV)</button></div>'+
       (pending?'<div style="background:#FFF7E6;border:1px solid #F0D9A6;color:#8A6D1F;padding:10px 12px;border-radius:10px;margin-bottom:12px;font-size:13px"><b>'+pending+'</b> title'+(pending>1?'s':'')+' awaiting approval. Review the properties, then Approve to make '+(pending>1?'them':'it')+' visible to users.</div>':'')+
       (rows.length?'<table>'+
       '<thead><tr><th>Title</th><th>Creator</th><th>Plan</th><th>Status</th><th>Score</th><th>Watches</th><th>Placement</th><th></th></tr></thead>'+
       '<tbody>'+rows.map(t=>'<tr>'+
         '<td><b>'+esc(t.title)+'</b><div style="color:var(--mist-2);font-size:11px">'+esc(t.genre)+' \u00b7 '+esc(t.code)+'</div></td>'+
         '<td>'+esc(t.creator||'\u2014')+'</td>'+
-        '<td><span class="pill '+(t.plan==='studio'?'navy':t.plan==='pro'?'red':'gray')+'">'+esc(t.plan||'\u2014')+'</span></td>'+
+        '<td><span class="pill '+(t.plan==='premium'||t.plan==='studio'?'navy':(t.plan==='free'||t.plan==='starter'||!t.plan)?'gray':'red')+'">'+esc(t.plan||'\u2014')+'</span></td>'+
         '<td>'+statusPill(t.status)+'</td>'+
         '<td>'+(t.score?t.score.toFixed(1):'\u2014')+'</td>'+
         '<td>'+num(t.watchCount)+'</td>'+
@@ -310,6 +312,7 @@ async function viewTitles(){
         '</div></td></tr>').join('')+'</tbody></table>':'<div class="empty">No titles submitted yet</div>')+'</div>';
     bindActions('button[data-a]',b=>'/admin/titles/'+b.dataset.t+'/'+b.dataset.a,viewTitles);
     document.querySelectorAll('button[data-view]').forEach(b=>{ b.onclick=()=>showTitle(b.dataset.view); });
+    if($('#dlStats')) $('#dlStats').onclick=downloadStatsCsv;
   }catch(e){ $('#view').innerHTML=errBox(e); }
 }
 
@@ -366,7 +369,7 @@ async function viewUsers(){
           '<td><span class="pill '+((u.status==='verified'||u.status==='active')?'green':u.status==='banned'?'red':'amber')+'">'+esc(u.status)+'</span></td>'+
           '<td>'+(u.role==='critic'?num(u.followers)+' / '+num(u.reviewCount):'\u2014')+'</td>'+
           '<td>'+(u.role==='critic'?'<span class="pill '+(u.eligible?'green':'gray')+'">'+(u.eligible?'Eligible':'Locked')+'</span>':'\u2014')+'</td>'+
-          '<td>'+(u.role==='creator'?'<select class="planSel act" data-u="'+u.id+'">'+['starter','pro','studio'].map(pl=>'<option value="'+pl+'"'+(u.plan===pl?' selected':'')+'>'+pl+'</option>').join('')+'</select>':num(u.points)+' pts')+'</td>'+
+          '<td>'+(u.role==='creator'?'<select class="planSel act" data-u="'+u.id+'">'+['free','curious','growth','premium'].map(pl=>'<option value="'+pl+'"'+((u.plan===pl||({starter:'free',pro:'curious',studio:'growth'}[u.plan])===pl)?' selected':'')+'>'+pl+'</option>').join('')+'</select>':num(u.points)+' pts')+'</td>'+
           '<td><div class="row-actions">'+
             ((u.role==='creator'&&u.status!=='verified')?'<button class="act green" data-u="'+u.id+'" data-a="verify">Verify</button>':'')+
             (u.status!=='banned'?'<button class="act red" data-u="'+u.id+'" data-a="ban">Ban</button>':'<button class="act green" data-u="'+u.id+'" data-a="activate">Reinstate</button>')+
@@ -459,9 +462,39 @@ async function viewRevenue(){
 }
 
 /* ---------------- announcements (promotional messages) ---------------- */
+async function downloadStatsCsv(){
+  try{
+    const res = await fetch('/api/admin/titles/stats.csv',{headers:{authorization:'Bearer '+S.access}});
+    if(!res.ok) throw new Error('Download failed ('+res.status+')');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='critiflix-title-stats.csv'; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }catch(e){ alert(e.message); }
+}
+
+async function viewReviews(){
+  try{
+    const rows = await api('/admin/reviews');
+    $('#view').innerHTML = '<div class="panel">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0">Reviews & comments</h3><span style="color:var(--mist-2);font-size:12px">'+rows.length+' total</span></div>'+
+      (rows.length?'<table><thead><tr><th>Film</th><th>Critic</th><th>Rating</th><th>Comment</th><th>Likes</th><th></th></tr></thead><tbody>'+
+      rows.map(r=>'<tr>'+
+        '<td>'+esc(r.title||'\u2014')+'</td>'+
+        '<td>'+esc(r.critic||'\u2014')+'</td>'+
+        '<td>'+(r.rating||'\u2014')+'\u2605</td>'+
+        '<td style="max-width:340px">'+esc((r.headline?r.headline+' \u2014 ':'')+(r.body||'')).slice(0,200)+'</td>'+
+        '<td>'+(r.likeCount||0)+'</td>'+
+        '<td><button class="act red" data-del="'+r.id+'">Delete</button></td>'+
+      '</tr>').join('')+'</tbody></table>':'<div class="empty">No reviews yet</div>')+'</div>';
+    document.querySelectorAll('button[data-del]').forEach(b=>{ b.onclick=async()=>{ if(!confirm('Delete this review?'))return; try{ await api('/admin/reviews/'+b.dataset.del,{method:'DELETE'}); viewReviews(); }catch(e){ alert(e.message);} }; });
+  }catch(e){ $('#view').innerHTML=errBox(e); }
+}
+
 async function viewAnnouncements(){
   try{
     const rows = await api('/admin/announcements');
+    let films=[]; try{ films = await api('/admin/titles'); }catch(e){}
     $('#view').innerHTML =
       '<div class="grid two">'+
         '<div class="panel"><h3>New message</h3><p class="hint">Broadcast to users or creators</p>'+
@@ -479,7 +512,7 @@ async function viewAnnouncements(){
       '<div class="panel" style="margin-top:16px"><h3>WhatsApp promotion</h3><p class="hint">Blast a promo to users\u2019 WhatsApp numbers (click-to-chat links are generated; connect the WhatsApp Business API for automatic delivery)</p>'+
         '<label>Audience</label><select id="waAud" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font-weight:600">'+
           '<option value="all">Everyone</option><option value="critics">Critics</option><option value="creators">Creators</option></select>'+
-        '<label>Title</label><input id="waTitle" placeholder="\uD83C\uDFAC New on CritiFlix"/>'+
+        '<label>Feature a film (attaches its thumbnail)</label><select id="waFilm" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font-weight:600">'+'<option value="">— none —</option>'+films.map(function(f){return '<option value="'+f.id+'">'+esc(f.title)+'</option>';}).join('')+'</select>'+'<label>Title</label><input id="waTitle" placeholder="\uD83C\uDFAC New on CritiFlix"/>'+
         '<label>Message</label><textarea id="waBody" rows="3" placeholder="Tell users what\u2019s new\u2026" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px"></textarea>'+
         '<button class="btn btn-red" id="waSend" style="margin-top:14px">Launch WhatsApp promotion</button>'+
         '<div id="waResult" style="margin-top:14px"></div></div>';
@@ -495,7 +528,7 @@ async function viewAnnouncements(){
       if(!title||!message) return alert('Add a title and message');
       $('#waSend').disabled=true;
       try{
-        const r=await api('/admin/promotions/whatsapp',{method:'POST',body:{audience:$('#waAud').value,title,message}});
+        const r=await api('/admin/promotions/whatsapp',{method:'POST',body:{audience:$('#waAud').value,title,message,titleId:$('#waFilm').value||undefined}});
         $('#waResult').innerHTML='<div style="background:var(--paper-2);border-radius:10px;padding:12px"><b>'+r.recipientCount+'</b> recipient'+(r.recipientCount===1?'':'s')+' with a WhatsApp number. '+esc(r.note)+
           (r.recipients&&r.recipients.length?'<div style="max-height:220px;overflow:auto;margin-top:10px">'+r.recipients.map(u=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)"><span style="font-size:12.5px">'+esc(u.name)+' \u00b7 '+esc(u.whatsapp)+'</span><a class="act green" href="'+esc(u.link)+'" target="_blank" rel="noopener">Open chat</a></div>').join('')+'</div>':'')+'</div>';
       }catch(e){ alert(e.message); }

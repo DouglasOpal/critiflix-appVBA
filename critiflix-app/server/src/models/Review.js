@@ -11,6 +11,8 @@ const reviewSchema = new Schema(
     headline: { type: String, default: '' },
     body: { type: String, default: '' },
     tags: { type: [String], default: [] },
+    likes: { type: [Schema.Types.ObjectId], ref: 'User', default: [] }, // critics/creators who liked
+    likeCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
