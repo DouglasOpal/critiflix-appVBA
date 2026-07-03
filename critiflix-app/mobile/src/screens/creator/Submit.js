@@ -87,7 +87,7 @@ export default function Submit({ navigation }) {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) return Alert.alert('Permission needed', 'Allow library access to pick a poster.');
 
-      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1, allowsEditing: true, aspect: [2, 3] });
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1, allowsEditing: true, aspect: [16, 9] });
       if (res.canceled || !res.assets?.length) return;
 
       const srcUri = res.assets[0].uri;
@@ -247,5 +247,5 @@ const styles = StyleSheet.create({
   upHint: { fontSize: 11, color: colors.mist, marginTop: 3, textAlign: 'center' },
   playPill: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   posterCard: { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  posterThumb: { width: 46, height: 62, borderRadius: 9, backgroundColor: colors.paper2, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  posterThumb: { width: 74, height: 42, borderRadius: 8, backgroundColor: colors.paper2, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
 });

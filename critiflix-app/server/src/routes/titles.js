@@ -15,15 +15,14 @@ import { MAX_VIDEO_BYTES, MAX_TRAILER_SECONDS } from './uploads.js';
 const r = Router();
 
 const creatorLite = 'name code channelUrl avatarColor plan followers';
-const PLAN_WEIGHT = { free: 1, curious: 2, growth: 3, premium: 4 };
 
 const shape = (t) => {
   const o = t.toObject ? t.toObject({ versionKey: false }) : t;
   return { ...o, id: o._id, reward: o.watchPoints };
 };
 
-// Rank titles. "priority" (default) blends rating, recency, trending and the
-// creator's subscription tier so higher plans surface higher.
+// Rank titles. "priority" (default) blends rating, recency and trending.
+// Note: creator subscription tier no longer weights ranking (tier multiplier removed).
 function rank(titles, sort) {
   const now = Date.now();
   const maxWatch = Math.max(1, ...titles.map((t) => t.watchCount || 0));
@@ -32,8 +31,7 @@ function rank(titles, sort) {
     const recency = Math.max(0, 1 - ageDays / 30);
     const rating = (t.score || 0) / 10;
     const trending = (t.watchCount || 0) / maxWatch;
-    const planW = PLAN_WEIGHT[normalizePlan(t.creator?.plan)] || 1;
-    const priority = (t.featured ? 1000 : 0) + (t.priorityBoost || 0) * 10 + planW * 2 + rating * 5 + recency * 3 + trending * 4;
+    const priority = (t.featured ? 1000 : 0) + (t.priorityBoost || 0) * 10 + rating * 5 + recency * 3 + trending * 4;
     return { t, rating, trending, priority, createdAt: new Date(t.createdAt).getTime() };
   });
   const cmp = {
@@ -148,7 +146,24 @@ r.patch('/:id', protect(), requireRole('creator'), asyncHandler(async (req, res)
   res.json(shape(t));
 }));
 
+// Creator deletes their own title (or an admin deletes any title). Cleans up
+// dependent reviews and watch records so nothing orphaned is left behind.
+r.delete('/:id', protect(), asyncHandler(async (req, res) => {
+  const t = await Title.findById(req.params.id);
+  if (!t) throw notFound('Title not found');
+  const isOwner = String(t.creator) === String(req.user._id);
+  const isAdmin = req.user.role === 'admin';
+  if (!isOwner && !isAdmin) throw badRequest('You can only delete your own titles');
+  await Promise.all([
+    Review.deleteMany({ title: t._id }),
+    Watch.deleteMany({ title: t._id }),
+    Title.findByIdAndDelete(t._id),
+  ]);
+  res.json({ ok: true, id: t._id });
+}));
+
 // Critic reports watch progress. Watched time is credited by WALL-CLOCK: between
+
 // reports we add at most the real time elapsed, so scrubbing/fast-forwarding the
 // player can't accrue watch credit. The 75% gate is measured on this real time.
 r.post('/:id/watch', protect(), requireRole('critic'), asyncHandler(async (req, res) => {

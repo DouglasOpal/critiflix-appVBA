@@ -110,6 +110,7 @@ export const api = {
   title: (id) => request(`/titles/${id}`),
   submitTitle: (payload) => request('/titles', { method: 'POST', body: payload }),
   editTitle: (id, payload) => request(`/titles/${id}`, { method: 'PATCH', body: payload }),
+  deleteTitle: (id) => request(`/titles/${id}`, { method: 'DELETE' }),
   watch: (id) => request(`/titles/${id}/watch`, { method: 'POST' }),
   review: (id, payload) => request(`/titles/${id}/review`, { method: 'POST', body: payload }),
   points: () => request('/me/points'),

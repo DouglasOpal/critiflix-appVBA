@@ -74,7 +74,6 @@ export default function Browse({ navigation }) {
           <Text style={{ fontSize: 11, color: colors.mist, marginTop: 2, marginBottom: 6 }} numberOfLines={1}>{m.creator?.name} · {m.genre}</Text>
           <Stars value={Math.round((m.score || 0) / 2)} />
         </View>
-        <Chip label={`+${m.reward} pts`} tone="red" />
       </Card>
     </Pressable>
   );
@@ -86,7 +85,6 @@ export default function Browse({ navigation }) {
           {mediaUrl(m.posterSmall || m.posterLarge) ? (
             <Image source={{ uri: mediaUrl(m.posterSmall || m.posterLarge) }} style={{ position: 'absolute', width: '100%', height: '100%' }} resizeMode="cover" />
           ) : Icons.youtube(18)}
-          <View style={{ position: 'absolute', top: 7, left: 7 }}><Chip label={`+${m.reward}`} tone="red" /></View>
           {m.featured ? <View style={{ position: 'absolute', top: 7, right: 7 }}><Chip label="★ Featured" tone="navy" /></View> : null}
         </View>
         <View style={{ padding: 9 }}>
@@ -140,10 +138,11 @@ export default function Browse({ navigation }) {
                         <Image source={{ uri: mediaUrl(featured.posterLarge || featured.posterSmall) }} style={{ position: 'absolute', width: '100%', height: '100%' }} resizeMode="cover" />
                       ) : null}
                       <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' }}>{Icons.play('#fff', 18)}</View>
-                      <View style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', gap: 6 }}>
-                        <Chip label={`+${featured.reward} pts`} tone="red" />
-                        {featured.featured ? <Chip label="Featured" tone="navy" /> : null}
-                      </View>
+                      {featured.featured ? (
+                        <View style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', gap: 6 }}>
+                          <Chip label="Featured" tone="navy" />
+                        </View>
+                      ) : null}
                     </View>
                     <View style={{ padding: 13 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

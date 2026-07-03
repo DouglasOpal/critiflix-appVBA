@@ -17,6 +17,12 @@ export default function SignIn({ navigation, route }) {
   const [whatsapp, setWhatsapp] = useState('');
   const [otpChannel, setOtpChannel] = useState('phone'); // 'phone' (SMS) | 'whatsapp'
   const [busy, setBusy] = useState(false);
+  const [kb, setKb] = useState(0);
+  useEffect(() => {
+    const sh = Keyboard.addListener('keyboardDidShow', (e) => setKb(e.endCoordinates?.height || 0));
+    const hd = Keyboard.addListener('keyboardDidHide', () => setKb(0));
+    return () => { sh.remove(); hd.remove(); };
+  }, []);
   const creating = mode === 'create';
 
   const submit = async () => {

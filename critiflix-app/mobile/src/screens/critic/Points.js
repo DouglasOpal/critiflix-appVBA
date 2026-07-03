@@ -47,10 +47,6 @@ export default function Points({ navigation }) {
               <View>
                 <Text style={{ color: '#fff', opacity: 0.85, fontSize: 11 }}>Points balance</Text>
                 <Text style={{ color: '#fff', fontWeight: '800', fontSize: 38, marginTop: 4 }}>{data.balance.toLocaleString()}</Text>
-                <Text style={{ color: '#fff', opacity: 0.9, fontSize: 11.5, marginTop: 5 }}>≈ ₦{data.nairaValue.toLocaleString()} redeemable</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ color: '#fff', opacity: 0.85, fontSize: 10 }}>1 pt = ₦1</Text>
               </View>
             </View>
           </Ticket>

@@ -36,13 +36,7 @@
           "photosPermission": "CritiFlix needs access to your library to upload a trailer and poster."
         }
       ],
-      "expo-video",
-      [
-        "expo-notifications",
-        {
-          "color": "#E50914"
-        }
-      ]
+      "expo-video"
     ],
     "extra": {
       "eas": {

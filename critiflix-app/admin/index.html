@@ -316,16 +316,28 @@ async function viewTitles(){
   }catch(e){ $('#view').innerHTML=errBox(e); }
 }
 
+function reviewsBlock(rows){
+  if(!rows||!rows.length) return '<div class="empty" style="padding:16px">No reviews or comments yet</div>';
+  return rows.map(r=>'<div style="padding:11px 0;border-bottom:1px solid var(--paper-2)" data-rv="'+r.id+'">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:12.5px">'+esc(r.critic||'\u2014')+'</b><span style="color:var(--gold);font-size:12px">'+(r.rating||'\u2014')+'\u2605</span></div>'+
+    (r.headline?'<div style="font-size:12.5px;font-weight:700;margin-top:4px">'+esc(r.headline)+'</div>':'')+
+    (r.body?'<div style="font-size:12px;color:var(--mist);margin-top:2px;line-height:1.5">'+esc(r.body)+'</div>':'')+
+    '<div style="display:flex;gap:14px;align-items:center;margin-top:7px">'+
+      '<button class="act" data-like="'+r.id+'" style="'+(r.liked?'color:var(--red)':'')+'">'+(r.liked?'\u2764\ufe0f':'\ud83e\udd0d')+' <span data-likecount>'+(r.likeCount||0)+'</span></button>'+
+      '<button class="act red" data-rvdel="'+r.id+'">Delete</button>'+
+    '</div></div>').join('');
+}
 async function showTitle(id){
   try{
     const t = await api('/admin/titles/'+id);
     const poster = t.posterLarge||t.posterSmall;
     const link = (u,label)=> u?'<a href="'+esc(u)+'" target="_blank" rel="noopener" style="color:var(--red);font-weight:700">'+label+' \u2197</a>':'<span style="color:var(--mist-2)">\u2014</span>';
     const row = (k,v)=>'<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--paper-2)"><div style="width:120px;color:var(--mist-2);font-size:12px">'+k+'</div><div style="flex:1;font-size:13px">'+v+'</div></div>';
+    let reviews=[]; try{ reviews = await api('/admin/reviews?titleId='+id); }catch(e){}
     const body = '<div style="position:fixed;inset:0;background:rgba(11,26,51,.55);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50" id="ovl">'+
       '<div style="background:#fff;border-radius:16px;max-width:620px;width:100%;max-height:88vh;overflow:auto;padding:20px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0">'+esc(t.title)+'</h3><button class="act" id="ovlX">Close</button></div>'+
-        (poster?'<img src="'+esc(poster)+'" style="width:100%;max-height:240px;object-fit:cover;border-radius:12px;margin-bottom:14px" />':'')+
+        (poster?'<div style="width:100%;aspect-ratio:16/9;border-radius:12px;margin-bottom:14px;overflow:hidden;background:var(--paper-2)"><img src="'+esc(poster)+'" style="width:100%;height:100%;object-fit:cover" /></div>':'')+
         row('Status',statusPill(t.status))+
         row('Code',esc(t.code))+
         row('Creator',esc((t.creator&&t.creator.name)||'\u2014')+((t.creator&&t.creator.email)?' \u00b7 '+esc(t.creator.email):''))+
@@ -340,6 +352,7 @@ async function showTitle(id){
           (['reviewing','scored'].includes(t.status)?'<button class="btn btn-ghost" id="ovlDelist" style="color:var(--red);border-color:var(--red)">Delist (violation)</button>':'')+
           (t.status==='delisted'?'<button class="btn btn-primary" id="ovlRelist">Relist</button>':'')+
         '</div>'+
+        '<div style="margin-top:20px"><h3 style="margin:0 0 8px;font-size:14px">Comments &amp; reviews ('+reviews.length+')</h3><div id="ovlReviews">'+reviewsBlock(reviews)+'</div></div>'+
       '</div></div>';
     let m=$('#modal'); if(!m){ m=document.createElement('div'); m.id='modal'; document.body.appendChild(m); }
     m.innerHTML=body;
@@ -349,6 +362,18 @@ async function showTitle(id){
     if($('#ovlApprove')) $('#ovlApprove').onclick=()=>act('approve');
     if($('#ovlDelist')) $('#ovlDelist').onclick=()=>{ if(confirm('Delist this title? It will be hidden from all users.')) act('delist'); };
     if($('#ovlRelist')) $('#ovlRelist').onclick=()=>act('relist');
+    document.querySelectorAll('button[data-like]').forEach(b=>{ b.onclick=async()=>{
+      b.disabled=true;
+      try{ const r=await api('/titles/'+id+'/reviews/'+b.dataset.like+'/like',{method:'POST'});
+        b.style.color=r.liked?'var(--red)':''; b.innerHTML=(r.liked?'\u2764\ufe0f':'\ud83e\udd0d')+' <span data-likecount>'+r.likeCount+'</span>';
+      }catch(e){ alert(e.message); } finally{ b.disabled=false; }
+    }; });
+    document.querySelectorAll('button[data-rvdel]').forEach(b=>{ b.onclick=async()=>{
+      if(!confirm('Delete this review?')) return;
+      b.disabled=true;
+      try{ await api('/admin/reviews/'+b.dataset.rvdel,{method:'DELETE'}); showTitle(id); }
+      catch(e){ alert(e.message); b.disabled=false; }
+    }; });
   }catch(e){ alert(e.message); }
 }
 

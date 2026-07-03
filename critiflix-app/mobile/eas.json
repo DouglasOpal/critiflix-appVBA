@@ -10,7 +10,7 @@
     "production": {
       "android": { "buildType": "app-bundle" },
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_BASE": "https://.onrender.com" }
+      "env": { "EXPO_PUBLIC_API_BASE": "https://critiflix.onrender.com" }
     }
   },
   "submit": { "production": {} }

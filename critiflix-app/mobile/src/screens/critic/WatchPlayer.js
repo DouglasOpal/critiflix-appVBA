@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, Linking, useWindowDimensions, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Linking, Image, useWindowDimensions, StyleSheet } from 'react-native';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { colors } from '../../theme/tokens';
 import { Screen, TopBand, Pad } from '../../components/Screen';
 import { Button, Bar } from '../../components/ui';
-import { api } from '../../api';
+import { api, mediaUrl } from '../../api';
 
 // Extract the 11-char YouTube id from any common URL form.
 function ytId(url) {
@@ -14,8 +14,9 @@ function ytId(url) {
 }
 
 export default function WatchPlayer({ route, navigation }) {
-  const { id, title, movieUrl, requiredPct = 0.75 } = route.params || {};
+  const { id, title, movieUrl, requiredPct = 0.75, poster } = route.params || {};
   const videoId = ytId(movieUrl);
+  const posterUri = mediaUrl(poster);
   const { width: winW, height: winH } = useWindowDimensions();
   const playerH = Math.min(Math.round(winW * 9 / 16), Math.round(winH * 0.55)); // responsive 16:9, capped
 
@@ -23,6 +24,7 @@ export default function WatchPlayer({ route, navigation }) {
   const [pct, setPct] = useState(0);
   const [unlocked, setUnlocked] = useState(false);
   const [playerError, setPlayerError] = useState(null);
+  const [playerReady, setPlayerReady] = useState(false);
   const lastSent = useRef(0);
 
   // Report the current playhead each tick. The server credits only real elapsed
@@ -74,6 +76,13 @@ export default function WatchPlayer({ route, navigation }) {
     return (
       <Screen>
         <TopBand title="Watch film" onBack={() => navigation.goBack()} />
+        {posterUri ? (
+          <Pad style={{ marginTop: 14 }}>
+            <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.navy2 }}>
+              <Image source={{ uri: posterUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            </View>
+          </Pad>
+        ) : null}
         <Pad style={{ marginTop: 20 }}>
           <Text style={{ color: colors.mist }}>This title's full-movie link isn't a recognised YouTube URL, so it can't be watched here.</Text>
         </Pad>
@@ -88,6 +97,9 @@ export default function WatchPlayer({ route, navigation }) {
       <TopBand title={title || 'Watch film'} subtitle="Watch 75% to unlock your review" onBack={() => navigation.goBack()} />
 
       <View style={{ width: '100%', height: playerH, backgroundColor: '#000' }}>
+        {posterUri && !playerReady ? (
+          <Image source={{ uri: posterUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        ) : null}
         <YoutubePlayer
           ref={playerRef}
           height={playerH}
@@ -96,6 +108,7 @@ export default function WatchPlayer({ route, navigation }) {
           play={false}
           initialPlayerParams={{ controls: true, modestbranding: true, rel: false, preventFullScreen: false }}
           webViewProps={{ allowsInlineMediaPlayback: true, androidLayerType: 'hardware' }}
+          onReady={() => setPlayerReady(true)}
           onChangeState={onState}
           onError={onError}
         />

@@ -79,7 +79,7 @@ export default function FilmDetail({ route, navigation }) {
               {trailerSource ? <VideoView style={StyleSheet.absoluteFill} player={player} nativeControls allowsFullscreen contentFit="contain" /> : null}
             </View>
             <Button title="Watch the full film" variant="yt" icon={Icons.play('#fff', 16)}
-              onPress={() => { closeTrailer(); navigation.navigate('WatchPlayer', { id, title: t.title, movieUrl: t.movieUrl, requiredPct: t.requiredWatchPct || 0.75 }); }}
+              onPress={() => { closeTrailer(); navigation.navigate('WatchPlayer', { id, title: t.title, movieUrl: t.movieUrl, requiredPct: t.requiredWatchPct || 0.75, poster: t.posterLarge || t.posterSmall }); }}
               style={{ marginTop: 14 }} />
           </View>
         </View>
@@ -123,7 +123,7 @@ export default function FilmDetail({ route, navigation }) {
         ) : (
           <>
             <Button title="Watch full film" variant="yt" icon={Icons.play('#fff', 16)}
-              onPress={() => navigation.navigate('WatchPlayer', { id, title: t.title, movieUrl: t.movieUrl, requiredPct: t.requiredWatchPct || 0.75 })} style={{ marginBottom: 10 }} />
+              onPress={() => navigation.navigate('WatchPlayer', { id, title: t.title, movieUrl: t.movieUrl, requiredPct: t.requiredWatchPct || 0.75, poster: t.posterLarge || t.posterSmall })} style={{ marginBottom: 10 }} />
             <Text style={{ textAlign: 'center', fontSize: 11, color: colors.mist2 }}>
               Watch {Math.round((t.requiredWatchPct || 0.75) * 100)}% in-app to review &amp; earn <Text style={{ color: colors.red, fontWeight: '700' }}>+{t.reward} pts</Text>
               {watchedPct > 0 ? ` · ${watchedPct}% watched` : ''}
