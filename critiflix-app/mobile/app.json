@@ -19,10 +19,15 @@
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B1A33"
+      }
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       [
@@ -43,6 +48,7 @@
       "eas": {
         "projectId": "09b0f395-3c2d-4fc4-9c6e-162951c7d3e7"
       }
-    }
+    },
+    "icon": "./assets/icon.png"
   }
 }
