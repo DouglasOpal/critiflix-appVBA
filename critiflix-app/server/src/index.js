@@ -30,6 +30,7 @@ app.use('/api/webhooks', webhookRoutes);
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 
+app.get('/', (_req, res) => res.redirect('/admin'));
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'critiflix-api', db: isDbConnected() ? 'connected' : 'down' }));
 app.get('/api/config', (_req, res) => res.json({
   points: POINTS, plans: PLANS, redeemRate: REDEEM_RATE,
