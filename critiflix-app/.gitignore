@@ -19,6 +19,11 @@ web-build/
 !.env.example
 !**/.env.example
 
+# ---- Firebase / FCM push credentials (get your own from Firebase console) ----
+google-services.json
+**/google-services.json
+!**/google-services.json.example
+
 # ---- logs ----
 *.log
 npm-debug.*

@@ -23,10 +23,16 @@ export const env = {
   paystackPublic: process.env.PAYSTACK_PUBLIC_KEY || '',
   paystackCallbackUrl: process.env.PAYSTACK_CALLBACK_URL || 'http://localhost:4000/api/me/subscribe/callback',
 
-  // Termii (SMS tokens + WhatsApp promotions; simulate when unset)
-  termiiApiKey: process.env.TERMII_API_KEY || '',
-  termiiSenderId: process.env.TERMII_SENDER_ID || '',              // approved Sender ID (e.g. CritiFlix)
-  termiiBaseUrl: process.env.TERMII_BASE_URL || 'https://api.ng.termii.com'
+  // Twilio (SMS tokens + WhatsApp OTP/promotions; simulate when unset)
+  twilioSid: process.env.TWILIO_ACCOUNT_SID || '',
+  twilioToken: process.env.TWILIO_AUTH_TOKEN || '',
+  twilioFrom: process.env.TWILIO_FROM || '',                       // E.164 SMS-capable number, e.g. +12025550123
+  twilioWhatsappFrom: process.env.TWILIO_WHATSAPP_FROM || '',      // e.g. whatsapp:+14155238886
+
+  // Twilio SendGrid (email OTP + product update alerts; simulate when unset)
+  sendgridApiKey: process.env.SENDGRID_API_KEY || '',
+  emailFrom: process.env.EMAIL_FROM || '',                         // must be a verified SendGrid sender
+  emailFromName: process.env.EMAIL_FROM_NAME || 'CritiFlix'
 };
 
 // Warn (don't crash) if running with insecure defaults outside dev.

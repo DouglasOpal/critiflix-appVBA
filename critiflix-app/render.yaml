@@ -31,13 +31,22 @@ services:
         value: CritiFlix Admin
       - key: ADMIN_PASSWORD
         sync: false
-      # --- Termii (SMS tokens + WhatsApp promotions) ---
-      - key: TERMII_API_KEY
+      # --- Twilio (SMS tokens + WhatsApp OTP/promotions) ---
+      - key: TWILIO_ACCOUNT_SID
         sync: false
-      - key: TERMII_SENDER_ID
+      - key: TWILIO_AUTH_TOKEN
         sync: false
-      - key: TERMII_BASE_URL
-        value: https://api.ng.termii.com
+      - key: TWILIO_FROM
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+      # --- Twilio SendGrid (email OTP + product update alerts) ---
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: CritiFlix
       # --- Paystack (payments) ---
       - key: PAYSTACK_SECRET_KEY
         sync: false

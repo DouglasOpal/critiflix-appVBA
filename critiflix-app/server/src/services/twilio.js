@@ -14,10 +14,15 @@ async function getClient() {
   return client;
 }
 
-// E.164 normalisation: strip spaces/dashes, keep a leading +.
+// E.164 normalisation: strip spaces/dashes, expand a Nigerian local number
+// (0xxxxxxxxxx -> +234xxxxxxxxxx), keep a leading + otherwise.
 function e164(num) {
-  const s = String(num).trim().replace(/[^\d+]/g, '');
-  return s.startsWith('+') ? s : `+${s}`;
+  let s = String(num).trim().replace(/[^\d+]/g, '');
+  if (!s.startsWith('+')) {
+    if (s.startsWith('0')) s = `234${s.slice(1)}`; // Nigerian local -> intl
+    s = `+${s}`;
+  }
+  return s;
 }
 
 export async function sendSms(to, body) {

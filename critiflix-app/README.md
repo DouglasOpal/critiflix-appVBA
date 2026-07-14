@@ -190,7 +190,7 @@ critiflix-app/
 9. **Admin upgrades** — a **Revenue** page (MRR, ARPU, revenue-by-plan, payout pool), a **Messages** composer to broadcast promotional announcements to all users / critics / creators, plus per-creator plan changes and an eligibility column on Users.
 10. **Real logo** — the admin portal now uses the exact CritiFlix shutter mark from the brand pack.
 
-> Note on OTP & SMS: phone/email delivery needs a provider (e.g. Termii, Twilio, SendGrid). Until `OTP_PROVIDER` is set, OTP runs in simulated mode so the flow is fully testable.
+> Note on OTP & SMS: phone/WhatsApp delivery uses Twilio and email delivery uses Twilio SendGrid. Until the `TWILIO_*` / `SENDGRID_API_KEY` env vars are set, OTP runs in simulated mode so the flow is fully testable.
 
 ## Latest changes — responsive trailer, channel logo, keyboard, no demo accounts
 

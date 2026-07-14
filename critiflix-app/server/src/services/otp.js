@@ -1,8 +1,10 @@
 import crypto from 'crypto';
 import { Otp } from '../models/Otp.js';
-import { sendSms, smsEnabled, sendWhatsApp, whatsappEnabled } from './termii.js';
+import { sendSms, smsEnabled, sendWhatsApp, whatsappEnabled } from './twilio.js';
+import { sendEmail, emailEnabled } from './email.js';
 
-// OTP delivery via Termii. 'phone' -> SMS (dnd), 'whatsapp' -> WhatsApp.
+// OTP delivery via Twilio (SMS + WhatsApp) and Twilio SendGrid (email).
+// 'phone' -> SMS, 'whatsapp' -> WhatsApp, 'email' -> SendGrid.
 // Codes are NEVER returned to the client (requirement 3) — only delivered and,
 // when no provider is configured, logged server-side for local debugging.
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
@@ -18,8 +20,12 @@ export async function sendOtp(channel, destination) {
   try {
     if (channel === 'whatsapp' && whatsappEnabled) { await sendWhatsApp(destination, body); return { sent: true }; }
     if (channel === 'phone' && smsEnabled) { await sendSms(destination, body); return { sent: true }; }
+    if (channel === 'email' && emailEnabled) {
+      await sendEmail(destination, 'Your CritiFlix confirmation code', body);
+      return { sent: true };
+    }
   } catch (e) {
-    console.error(`[otp] Termii ${channel} failed:`, e.message);
+    console.error(`[otp] Twilio ${channel} failed:`, e.message);
   }
   // No provider configured: log only (code is never sent back to the app).
   console.log(`[otp] ${channel} -> ${destination}: ${code}`);

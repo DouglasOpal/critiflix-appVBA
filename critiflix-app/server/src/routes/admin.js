@@ -10,7 +10,8 @@ import { Announcement } from '../models/Announcement.js';
 import { Review } from '../models/Review.js';
 import { Follow } from '../models/Follow.js';
 import { notifyUsers } from '../services/notify.js';
-import { sendWhatsApp, whatsappEnabled } from '../services/termii.js';
+import { sendWhatsApp, whatsappEnabled } from '../services/twilio.js';
+import { sendBulkEmail, emailEnabled } from '../services/email.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { badRequest, notFound } from '../utils/ApiError.js';
 import { protect, requireRole } from '../middleware/auth.js';
@@ -286,7 +287,19 @@ r.post('/announcements', asyncHandler(async (req, res) => {
   // also push an in-app notification to the audience
   const role = audience === 'critics' ? 'critic' : audience === 'creators' ? 'creator' : null;
   const sent = await notifyUsers({ role, type: 'promo', title, body, data: { announcementId: String(a._id) } });
-  res.status(201).json({ ...a.toObject(), id: a._id, notified: sent });
+
+  // Product update / announcement emails, delivered via Twilio SendGrid when configured.
+  let emailResult = null;
+  if (channel === 'email') {
+    const q = role ? { role } : { role: { $ne: 'admin' } };
+    const recipients = await User.find({ ...q, email: { $ne: null } }).select('email').lean();
+    const addresses = recipients.map((u) => u.email).filter(Boolean);
+    emailResult = emailEnabled
+      ? await sendBulkEmail(addresses, title, body)
+      : { simulated: true, sent: 0, failed: addresses.length };
+  }
+
+  res.status(201).json({ ...a.toObject(), id: a._id, notified: sent, email: emailResult });
 }));
 
 // Launch a promotion to users' WhatsApp numbers. Real delivery needs the WhatsApp
@@ -312,7 +325,7 @@ r.post('/promotions/whatsapp', asyncHandler(async (req, res) => {
   await Announcement.create({ audience, title, body: message, channel: 'whatsapp', createdBy: req.user._id });
   await notifyUsers({ userIds: recipients.map((u) => u._id), type: 'promo', title, body: message, data: titleId ? { titleId } : {} });
 
-  // Real delivery via Termii WhatsApp when configured; otherwise return click-to-chat links.
+  // Real delivery via Twilio WhatsApp when configured; otherwise return click-to-chat links.
   let delivered = 0;
   if (whatsappEnabled) {
     await Promise.all(recipients.map(async (u) => {
@@ -323,11 +336,11 @@ r.post('/promotions/whatsapp', asyncHandler(async (req, res) => {
   const text = encodeURIComponent(waText);
   res.status(201).json({
     audience, recipientCount: recipients.length, delivered, poster: posterAbs,
-    sentVia: whatsappEnabled ? 'termii' : 'links',
+    sentVia: whatsappEnabled ? 'twilio' : 'links',
     recipients: recipients.map((u) => ({ name: u.name, whatsapp: u.whatsapp, link: `https://wa.me/${String(u.whatsapp).replace(/[^0-9]/g, '')}?text=${text}` })),
     note: whatsappEnabled
-      ? `Sent ${delivered}/${recipients.length} via Termii WhatsApp. Links are provided as a fallback.`
-      : 'Termii WhatsApp not configured — open each click-to-chat link to send, or set TERMII_API_KEY to auto-send.',
+      ? `Sent ${delivered}/${recipients.length} via Twilio WhatsApp. Links are provided as a fallback.`
+      : 'Twilio WhatsApp not configured — open each click-to-chat link to send, or set TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_WHATSAPP_FROM to auto-send.',
   });
 }));
 
