@@ -31,6 +31,9 @@ services:
         value: CritiFlix Admin
       - key: ADMIN_PASSWORD
         sync: false
+      # --- optional: gates the admin console's self-service "Create account" ---
+      - key: ADMIN_SIGNUP_CODE
+        sync: false
       # --- Twilio (SMS tokens + WhatsApp OTP/promotions) ---
       - key: TWILIO_ACCOUNT_SID
         sync: false

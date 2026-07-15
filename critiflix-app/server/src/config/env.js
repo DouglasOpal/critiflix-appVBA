@@ -29,6 +29,10 @@ export const env = {
   twilioFrom: process.env.TWILIO_FROM || '',                       // E.164 SMS-capable number, e.g. +12025550123
   twilioWhatsappFrom: process.env.TWILIO_WHATSAPP_FROM || '',      // e.g. whatsapp:+14155238886
 
+  // Admin console: shared invite code gating self-service admin account creation.
+  // Leave unset to disable the "create account" option entirely.
+  adminSignupCode: process.env.ADMIN_SIGNUP_CODE || '',
+
   // Twilio SendGrid (email OTP + product update alerts; simulate when unset)
   sendgridApiKey: process.env.SENDGRID_API_KEY || '',
   emailFrom: process.env.EMAIL_FROM || '',                         // must be a verified SendGrid sender

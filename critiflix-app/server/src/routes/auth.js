@@ -10,6 +10,7 @@ import { hashToken } from '../utils/tokens.js';
 import { protect } from '../middleware/auth.js';
 import { issueTokens, rotateRefresh, revokeRefresh, revokeAllForUser } from '../services/authService.js';
 import { sendOtp, verifyOtp } from '../services/otp.js';
+import { sendEmail, emailEnabled } from '../services/email.js';
 import { env } from '../config/env.js';
 
 const r = Router();
@@ -84,6 +85,33 @@ r.post('/register', asyncHandler(async (req, res) => {
   res.status(201).json({ user: user.toPublic(), ...tokens });
 }));
 
+// ---- POST /auth/admin-register -----------------------------------------------
+// Self-service admin console account creation, gated by a shared invite code
+// (ADMIN_SIGNUP_CODE). Disabled entirely when that env var is unset, so this
+// never opens admin signup to the public internet unless explicitly enabled.
+r.post('/admin-register', asyncHandler(async (req, res) => {
+  if (!env.adminSignupCode) throw badRequest('Admin account creation is not enabled on this server');
+  const { name, email, password, inviteCode } = req.body || {};
+  if (!inviteCode || inviteCode !== env.adminSignupCode) throw unauthorized('Invalid invite code');
+  if (!name || !isEmail(email) || !strongEnough(password)) {
+    throw badRequest('Name, a valid email and a password of at least 8 characters are required');
+  }
+  if (await User.exists({ email: email.toLowerCase() })) throw badRequest('That email is already registered');
+
+  const user = await User.create({
+    code: await uniqueUserCode('admin'),
+    role: 'admin',
+    name,
+    email: email.toLowerCase(),
+    passwordHash: await User.hashPassword(password),
+    emailVerified: true,
+    status: 'active',
+  });
+
+  const tokens = await issueTokens(user, req);
+  res.status(201).json({ user: user.toPublic(), ...tokens });
+}));
+
 // ---- POST /auth/login -------------------------------------------------------
 r.post('/login', asyncHandler(async (req, res) => {
   const { email, password } = req.body || {};
@@ -136,7 +164,14 @@ r.post('/forgot-password', asyncHandler(async (req, res) => {
       tokenHash: hashToken(token),
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
-    devToken = token; // emailed in production
+    devToken = token;
+    if (emailEnabled) {
+      const base = `${req.protocol}://${req.get('host')}`;
+      const link = `${base}/admin/#reset?token=${token}`;
+      const text = `We received a request to reset your CritiFlix password. Use this link within the next hour: ${link}\n\nIf you didn't request this, you can ignore this email.`;
+      const html = `<p>We received a request to reset your CritiFlix password.</p><p><a href="${link}">Reset your password</a> (link expires in 1 hour).</p><p>If you didn't request this, you can ignore this email.</p>`;
+      sendEmail(user.email, 'Reset your CritiFlix password', text, html).catch((e) => console.error('[auth] reset email failed:', e.message));
+    }
   }
   res.json({ ok: true, ...(env.isProd ? {} : { devToken }) });
 }));

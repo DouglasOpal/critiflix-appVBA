@@ -26,7 +26,8 @@
      radial-gradient(900px 500px at 80% -10%, rgba(229,9,20,.20), transparent 60%), var(--navy)}
   .login-card{width:min(380px,92vw);background:var(--white);border-radius:20px;padding:32px;box-shadow:var(--shadow)}
   .brand{display:flex;align-items:center;gap:11px;justify-content:center;margin-bottom:6px}
-  .brand .word{font-weight:800;letter-spacing:1.5px;font-size:20px}
+  .brand svg{display:block;flex-shrink:0}
+  .brand .word{font-weight:800;letter-spacing:1.5px;font-size:20px;line-height:1;display:flex;align-items:center}
   .brand .word b{color:var(--red)}
   .login-card h1{font-size:16px;margin:14px 0 2px;text-align:center}
   .login-card p{margin:0 0 18px;text-align:center;color:var(--mist);font-size:13px}
@@ -39,6 +40,12 @@
   .btn-ghost{background:#fff;border:1.5px solid var(--line);color:var(--navy)}
   .btn-sm{padding:7px 11px;font-size:12px;border-radius:9px}
   .err{background:var(--red-soft);color:#9B0710;font-size:12.5px;padding:9px 12px;border-radius:10px;margin-top:14px}
+  .ok{background:var(--green-soft);color:#0E6B47;font-size:12.5px;padding:9px 12px;border-radius:10px;margin-top:14px}
+  .auth-links{display:flex;justify-content:space-between;margin-top:16px}
+  .link-btn{background:none;border:none;padding:0;color:var(--mist);font-size:12.5px;font-weight:600;text-decoration:underline;cursor:pointer}
+  .link-btn:hover{color:var(--red)}
+  .back-link{display:inline-block;margin-bottom:12px;color:var(--mist);font-size:12.5px;font-weight:600;text-decoration:none;cursor:pointer}
+  .back-link:hover{color:var(--red)}
 
   /* ---------- shell ---------- */
   #app{display:grid;grid-template-columns:236px 1fr;min-height:100vh}
@@ -118,23 +125,69 @@
 <!-- ================= LOGIN ================= -->
 <section id="login">
   <div class="login-card">
-    <div class="brand"><svg style="color:var(--red)"><use href="#shutter" width="34" height="34"/></svg>
+    <div class="brand"><svg width="34" height="34" viewBox="0 0 34 34" style="color:var(--red)"><use href="#shutter" width="34" height="34"/></svg>
       <span class="word">CRITI<b>FLIX</b></span></div>
-    <h1>Admin Console</h1>
-    <p>Sign in with an administrator account</p>
-    <label for="email">Email</label>
-    <input id="email" type="email" value="admin@critiflix.app" autocomplete="username" />
-    <label for="password">Password</label>
-    <input id="password" type="password" value="critiflix123" autocomplete="current-password" />
-    <button class="btn btn-red" id="loginBtn">Sign in</button>
-    <div id="loginErr" class="err hidden"></div>
+
+    <!-- ---- sign in ---- -->
+    <div id="authSignIn">
+      <h1>Admin Console</h1>
+      <p>Sign in with an administrator account</p>
+      <label for="email">Email</label>
+      <input id="email" type="email" value="admin@critiflix.app" autocomplete="username" />
+      <label for="password">Password</label>
+      <input id="password" type="password" value="critiflix123" autocomplete="current-password" />
+      <button class="btn btn-red" id="loginBtn">Sign in</button>
+      <div id="loginErr" class="err hidden"></div>
+      <div class="auth-links">
+        <button class="link-btn" id="showForgotBtn">Forgot password?</button>
+        <button class="link-btn" id="showCreateBtn">Create account</button>
+      </div>
+    </div>
+
+    <!-- ---- forgot password: request link ---- -->
+    <div id="authForgot" class="hidden">
+      <a class="back-link" id="backFromForgot">&larr; Back to sign in</a>
+      <h1>Reset your password</h1>
+      <p>Enter your admin email and we'll send you a reset link</p>
+      <label for="forgotEmail">Email</label>
+      <input id="forgotEmail" type="email" autocomplete="username" />
+      <button class="btn btn-red" id="forgotBtn">Send reset link</button>
+      <div id="forgotMsg" class="hidden"></div>
+    </div>
+
+    <!-- ---- reset password: set new password from emailed link ---- -->
+    <div id="authReset" class="hidden">
+      <h1>Set a new password</h1>
+      <p>Choose a new password for your admin account</p>
+      <label for="resetPassword">New password</label>
+      <input id="resetPassword" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
+      <button class="btn btn-red" id="resetBtn">Set new password</button>
+      <div id="resetMsg" class="hidden"></div>
+    </div>
+
+    <!-- ---- create account: gated by invite code ---- -->
+    <div id="authCreate" class="hidden">
+      <a class="back-link" id="backFromCreate">&larr; Back to sign in</a>
+      <h1>Create admin account</h1>
+      <p>Requires an invite code from an existing administrator</p>
+      <label for="createName">Name</label>
+      <input id="createName" type="text" autocomplete="name" />
+      <label for="createEmail">Email</label>
+      <input id="createEmail" type="email" autocomplete="username" />
+      <label for="createPassword">Password</label>
+      <input id="createPassword" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
+      <label for="createInvite">Invite code</label>
+      <input id="createInvite" type="text" autocomplete="off" />
+      <button class="btn btn-red" id="createBtn">Create account</button>
+      <div id="createMsg" class="hidden"></div>
+    </div>
   </div>
 </section>
 
 <!-- ================= APP ================= -->
 <div id="app" class="hidden">
   <aside>
-    <div class="brand"><svg style="color:var(--red)"><use href="#shutter" width="28" height="28"/></svg>
+    <div class="brand"><svg width="28" height="28" viewBox="0 0 28 28" style="color:var(--red)"><use href="#shutter" width="28" height="28"/></svg>
       <span class="word">CRITI<b style="color:var(--red)">FLIX</b></span></div>
     <nav id="nav"></nav>
     <div class="foot">
@@ -189,6 +242,62 @@ $('#loginBtn').onclick = async ()=>{
 };
 $('#password').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').click();});
 $('#logoutBtn').onclick = logout;
+
+/* ---------------- auth panel switching ---------------- */
+const AUTH_PANELS = ['authSignIn','authForgot','authReset','authCreate'];
+function showAuthPanel(id){ AUTH_PANELS.forEach(p=>$('#'+p).classList.toggle('hidden', p!==id)); }
+
+/* ---------------- forgot password ---------------- */
+$('#showForgotBtn').onclick = ()=>{ $('#forgotEmail').value=$('#email').value.trim(); $('#forgotMsg').className='hidden'; showAuthPanel('authForgot'); };
+$('#backFromForgot').onclick = ()=> showAuthPanel('authSignIn');
+$('#forgotBtn').onclick = async ()=>{
+  const email=$('#forgotEmail').value.trim(), msg=$('#forgotMsg'), btn=$('#forgotBtn');
+  if(!email){ msg.className='err'; msg.textContent='Enter your email first.'; return; }
+  btn.disabled=true;
+  try{
+    await api('/auth/forgot-password',{method:'POST',body:{email}});
+    msg.className='ok'; msg.textContent="If that email belongs to an admin account, we've sent a reset link to it.";
+  }catch(e){ msg.className='err'; msg.textContent=e.message; }
+  finally{ btn.disabled=false; }
+};
+
+/* ---------------- reset password (from emailed link: #reset?token=...) ---------------- */
+function parseResetToken(){
+  const h=location.hash||'';
+  if(!h.startsWith('#reset')) return null;
+  const q=h.includes('?')?h.slice(h.indexOf('?')+1):'';
+  return new URLSearchParams(q).get('token');
+}
+$('#resetBtn').onclick = async ()=>{
+  const token=parseResetToken(), password=$('#resetPassword').value, msg=$('#resetMsg'), btn=$('#resetBtn');
+  if(!token){ msg.className='err'; msg.textContent='This reset link is missing its token.'; return; }
+  if(!password || password.length<8){ msg.className='err'; msg.textContent='Password must be at least 8 characters.'; return; }
+  btn.disabled=true;
+  try{
+    await api('/auth/reset-password',{method:'POST',body:{token,password}});
+    msg.className='ok'; msg.textContent='Password updated. You can sign in now.';
+    history.replaceState(null,'',location.pathname+location.search);
+    setTimeout(()=>showAuthPanel('authSignIn'), 1400);
+  }catch(e){ msg.className='err'; msg.textContent=e.message; }
+  finally{ btn.disabled=false; }
+};
+
+/* ---------------- create account (gated by invite code) ---------------- */
+$('#showCreateBtn').onclick = ()=>{ $('#createMsg').className='hidden'; showAuthPanel('authCreate'); };
+$('#backFromCreate').onclick = ()=> showAuthPanel('authSignIn');
+$('#createBtn').onclick = async ()=>{
+  const name=$('#createName').value.trim(), email=$('#createEmail').value.trim(),
+        password=$('#createPassword').value, inviteCode=$('#createInvite').value.trim(),
+        msg=$('#createMsg'), btn=$('#createBtn');
+  msg.className='hidden';
+  try{
+    const d = await api('/auth/admin-register',{method:'POST',body:{name,email,password,inviteCode}});
+    S.access=d.accessToken;S.refresh=d.refreshToken;S.user=d.user;save();boot();
+  }catch(e){ msg.className='err'; msg.textContent=e.message; }
+};
+
+// Land directly on the reset panel if this page was opened from an emailed reset link.
+if(parseResetToken()) showAuthPanel('authReset');
 
 /* ---------------- nav ---------------- */
 const SECTIONS = [
@@ -571,7 +680,7 @@ function bindActions(sel, urlFn, refresh){
 const errBox=(e)=>'<div class="panel"><div class="empty" style="color:var(--red)">'+esc(e.message||'Something went wrong')+'</div></div>';
 
 /* ---------------- start ---------------- */
-if(restore()) boot();
+if(!parseResetToken() && restore()) boot();
 </script>
 </body>
 </html>
