@@ -5,12 +5,12 @@
       "distribution": "internal",
       "android": { "buildType": "apk" },
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_BASE": "https://critiflix.onrender.com" }
+      "env": { "EXPO_PUBLIC_API_BASE": "https://api.critiflix.net" }
     },
     "production": {
       "android": { "buildType": "app-bundle" },
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_BASE": "https://critiflix.onrender.com" }
+      "env": { "EXPO_PUBLIC_API_BASE": "https://api.critiflix.net" }
     }
   },
   "submit": { "production": {} }

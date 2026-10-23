@@ -13,3 +13,5 @@ export { Follow } from './Follow.js';
 export { Otp } from './Otp.js';
 export { Announcement } from './Announcement.js';
 export { Notification } from './Notification.js';
+export { Comment } from './Comment.js';
+export { Setting } from './Setting.js';

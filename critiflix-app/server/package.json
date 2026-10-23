@@ -9,9 +9,12 @@
     "dev": "node --watch src/index.js",
     "seed": "node src/seed.js",
     "selftest": "node src/selftest.js",
-    "check": "node src/scripts/check-models.js"
+    "check": "node src/scripts/check-models.js",
+    "migrate:r2": "node src/scripts/migrate-uploads-to-r2.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1130.0",
+    "@aws-sdk/lib-storage": "^3.1130.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

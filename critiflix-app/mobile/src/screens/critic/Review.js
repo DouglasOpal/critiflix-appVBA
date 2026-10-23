@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, Alert, StyleSheet } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, Text, TextInput, Pressable, Alert, StyleSheet, ActivityIndicator } from 'react-native';
 import { colors } from '../../theme/tokens';
 import { Screen, TopBand, Pad, Icons } from '../../components/Screen';
 import { Card, Button, Chip, Eyebrow, Stars, Score } from '../../components/ui';
@@ -15,16 +15,32 @@ export default function Review({ route, navigation }) {
   const [headline, setHeadline] = useState('');
   const [body, setBody] = useState('');
   const [tags, setTags] = useState(['Sound design']);
+  const [submitting, setSubmitting] = useState(false);
+  const inFlight = useRef(false); // blocks a second tap before the state update lands
 
   const toggle = (t) => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
 
   const publish = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setSubmitting(true);
     try {
       const res = await api.review(id, { rating, headline, body, tags });
       await refresh();
-      Alert.alert('Published', `You earned +${res.awarded} points. New title score: ${res.score}/10.`);
+      Alert.alert('Published', earnedMessage(res));
       navigation.navigate('BrowseHome');
-    } catch (e) { Alert.alert('Could not publish', e.message); }
+    } catch (e) {
+      // Already reviewed (e.g. an earlier tap got through): go back to the title, where commenting is open.
+      if (/already reviewed/i.test(e.message)) {
+        Alert.alert('Already reviewed', 'Your review is in. You can add comments on the title page.');
+        navigation.goBack();
+      } else {
+        Alert.alert('Could not publish', e.message);
+      }
+    } finally {
+      inFlight.current = false;
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -33,7 +49,13 @@ export default function Review({ route, navigation }) {
         title="Your review"
         subtitle={title}
         onBack={() => navigation.goBack()}
-        right={<Pressable onPress={publish} style={styles.publish}><Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Publish</Text></Pressable>}
+        right={
+          <Pressable onPress={publish} disabled={submitting} style={[styles.publish, submitting && { opacity: 0.7 }]}>
+            {submitting
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Publish</Text>}
+          </Pressable>
+        }
       />
       <Pad style={{ marginTop: 14 }}>
         <Card style={styles.banner}>
@@ -73,14 +95,27 @@ export default function Review({ route, navigation }) {
           ))}
         </View>
 
-        <Button title={`Publish review · +100 pts`} onPress={publish} style={{ marginTop: 18 }} />
+        <Button title={submitting ? 'Publishing…' : 'Publish review'} onPress={publish} loading={submitting} style={{ marginTop: 18 }} />
       </Pad>
     </Screen>
   );
 }
 
+function earnedMessage(res) {
+  const score = `New title score: ${res.score}/10.`;
+  if (!res.awarded) return `Thanks for your review. ${score}`;
+  const b = res.benchmark;
+  if (res.toBenchmark > 0 && b && !b.reached) {
+    return `You earned +${res.awarded} points toward your first ${b.threshold.toLocaleString()}. ${b.remaining.toLocaleString()} to go before points start counting as cash. ${score}`;
+  }
+  if (res.toBenchmark > 0) {
+    return `You earned +${res.awarded} points and passed the benchmark. ${res.cashable} of them are cashable. ${score}`;
+  }
+  return `You earned +${res.awarded} cashable points. ${score}`;
+}
+
 const styles = StyleSheet.create({
-  publish: { backgroundColor: colors.red, borderRadius: 11, paddingHorizontal: 14, paddingVertical: 9 },
+  publish: { backgroundColor: colors.red, borderRadius: 11, paddingHorizontal: 14, paddingVertical: 9, minWidth: 72, alignItems: 'center' },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, marginBottom: 14, borderColor: '#CFE6DA', backgroundColor: colors.greenSoft },
   input: { paddingHorizontal: 14, paddingVertical: 13, marginTop: 8, marginBottom: 13 },
 });

@@ -9,7 +9,8 @@ const ledgerSchema = new Schema(
     points: { type: Number, required: true },        // positive earn, negative spend
     ref: { type: String, default: '' },              // human description (title name, destination…)
     title: { type: Schema.Types.ObjectId, ref: 'Title', default: null },
-    balanceAfter: { type: Number, default: null },   // snapshot for convenience
+    benchmark: { type: Number, default: 0 },         // part of `points` that went to the non-cash benchmark
+    balanceAfter: { type: Number, default: null },   // cashable balance snapshot for convenience
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );

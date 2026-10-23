@@ -15,7 +15,11 @@ import adminRoutes from './routes/admin.js';
 import uploadRoutes from './routes/uploads.js';
 import socialRoutes from './routes/social.js';
 import webhookRoutes from './routes/webhooks.js';
-import { POINTS, PLANS, REDEEM_RATE, EARN_MIN_FOLLOWERS, EARN_MIN_REVIEWS, WATCH_REQUIRED_PCT, PAYOUT_POOL_RATIO } from './points.js';
+import contactRoutes from './routes/contact.js';
+import { POINTS, PLANS, WATCH_REQUIRED_PCT, PAYOUT_POOL_RATIO } from './points.js';
+import { getEconomy, describeEconomy } from './services/settings.js';
+import { r2Enabled } from './services/storage.js';
+import { asyncHandler } from './utils/asyncHandler.js';
 import { paystackEnabled } from './services/paystack.js';
 import { MAX_VIDEO_BYTES, MAX_TRAILER_SECONDS } from './routes/uploads.js';
 
@@ -32,13 +36,17 @@ app.use(morgan('dev'));
 
 app.get('/', (_req, res) => res.redirect('/admin'));
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'critiflix-api', db: isDbConnected() ? 'connected' : 'down' }));
-app.get('/api/config', (_req, res) => res.json({
-  points: POINTS, plans: PLANS, redeemRate: REDEEM_RATE,
-  earn: { minFollowers: EARN_MIN_FOLLOWERS, minReviews: EARN_MIN_REVIEWS },
-  watchRequiredPct: WATCH_REQUIRED_PCT,
-  payoutPoolRatio: PAYOUT_POOL_RATIO,
-  payments: { paystack: paystackEnabled, publicKey: env.paystackPublic || null },
-  upload: { maxVideoBytes: MAX_VIDEO_BYTES, maxTrailerSeconds: MAX_TRAILER_SECONDS },
+app.get('/api/config', asyncHandler(async (_req, res) => {
+  const econ = describeEconomy(await getEconomy());
+  res.json({
+    points: POINTS, plans: PLANS, redeemRate: econ.nairaPerPoint,
+    earn: { threshold: econ.earnThreshold, nairaPerPoint: econ.nairaPerPoint, cashoutFee: econ.cashoutFee },
+    watchRequiredPct: WATCH_REQUIRED_PCT,
+    payoutPoolRatio: PAYOUT_POOL_RATIO,
+    payments: { paystack: paystackEnabled, publicKey: env.paystackPublic || null },
+    upload: { maxVideoBytes: MAX_VIDEO_BYTES, maxTrailerSeconds: MAX_TRAILER_SECONDS, storage: r2Enabled ? 'cloudflare-r2' : 'local' },
+    site: { url: env.siteUrl, api: env.apiUrl },
+  });
 }));
 
 app.use('/api/auth', authRoutes);
@@ -46,9 +54,11 @@ app.use('/api/titles', titleRoutes);
 app.use('/api/me', meRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/contact', contactRoutes);
+app.use('/contact', contactRoutes);          // website form posts to https://api.critiflix.net/contact
 app.use('/api', socialRoutes);
 
-// Serve uploaded trailers + posters
+// Legacy local uploads (new media is stored on Cloudflare R2 when configured)
 app.use('/uploads', express.static(join(__dirname, '../uploads')));
 
 // Admin web console at /admin

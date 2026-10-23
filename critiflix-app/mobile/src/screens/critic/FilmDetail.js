@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, Image, Pressable, Modal, ActivityIndicator, Alert, StyleSheet, useWindowDimensions } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, Image, Pressable, Modal, ActivityIndicator, Alert, StyleSheet, TextInput, useWindowDimensions } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { colors } from '../../theme/tokens';
 import { Screen, TopBand, Pad, Icons } from '../../components/Screen';
@@ -11,6 +11,9 @@ export default function FilmDetail({ route, navigation }) {
   const { width: winW, height: winH } = useWindowDimensions();
   const [t, setT] = useState(null);
   const [trailerOpen, setTrailerOpen] = useState(false);
+  const [comment, setComment] = useState('');
+  const [posting, setPosting] = useState(false);
+  const postingRef = useRef(false); // blocks a second tap before the state update lands
 
   const load = useCallback(() => api.title(id).then(setT).catch((e) => Alert.alert('Error', e.message)), [id]);
   useEffect(() => { load(); }, [load]);
@@ -40,6 +43,31 @@ export default function FilmDetail({ route, navigation }) {
         try {
           await api.deleteReviewAsCreator(id, rid);
           setT((prev) => prev && { ...prev, reviews: prev.reviews.filter((r) => (r.id || r._id) !== rid) });
+        } catch (e) { Alert.alert('Could not delete', e.message); }
+      } },
+    ]);
+  };
+
+  // Comments (no rating, no points) — the only option once a critic has reviewed.
+  const postComment = async () => {
+    const body = comment.trim();
+    if (!body || postingRef.current) return;
+    postingRef.current = true;
+    setPosting(true);
+    try {
+      const c = await api.addComment(id, body);
+      setComment('');
+      if (!c.duplicate) setT((prev) => prev && { ...prev, comments: [c, ...(prev.comments || [])] });
+    } catch (e) { Alert.alert('Could not post comment', e.message); }
+    finally { postingRef.current = false; setPosting(false); }
+  };
+  const removeComment = (cid) => {
+    Alert.alert('Delete comment', 'Remove this comment?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try {
+          await api.deleteComment(id, cid);
+          setT((prev) => prev && { ...prev, comments: (prev.comments || []).filter((c) => (c.id || c._id) !== cid) });
         } catch (e) { Alert.alert('Could not delete', e.message); }
       } },
     ]);
@@ -113,7 +141,15 @@ export default function FilmDetail({ route, navigation }) {
           {t.synopsis} <Text style={{ color: colors.mist2 }}>({words} words)</Text>
         </Text>
 
-        {alreadyWatched ? (
+        {t.hasReviewed ? (
+          <Card style={styles.doneCard}>
+            {Icons.check(colors.green, 18)}
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#0F7A52', fontWeight: '700', fontSize: 13 }}>You've reviewed this film</Text>
+              <Text style={{ color: '#0F7A52', fontSize: 11.5, marginTop: 2 }}>Points for this title are claimed. You can still join the conversation in the comments below.</Text>
+            </View>
+          </Card>
+        ) : alreadyWatched ? (
           <>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, justifyContent: 'center', marginBottom: 10 }}>
               {Icons.check(colors.green, 16)}<Text style={{ color: colors.green, fontWeight: '700', fontSize: 12 }}>You watched {watchedPct}% — review unlocked</Text>
@@ -168,13 +204,74 @@ export default function FilmDetail({ route, navigation }) {
             })}
           </View>
         ) : null}
+
+        {/* comments — no rating, no points */}
+        <View style={{ marginTop: 24 }}>
+          <Eyebrow tone="mist">Comments ({(t.comments || []).length})</Eyebrow>
+          <View style={{ height: 10 }} />
+          {t.canComment ? (
+            <Card style={{ padding: 12, marginBottom: 12 }}>
+              <TextInput
+                value={comment}
+                onChangeText={setComment}
+                editable={!posting}
+                multiline
+                maxLength={1000}
+                placeholder="Add a comment…"
+                placeholderTextColor={colors.mist2}
+                style={{ fontSize: 13, color: colors.navyInk, minHeight: 56, textAlignVertical: 'top' }}
+              />
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                <Text style={{ fontSize: 10.5, color: colors.mist2 }}>{comment.length}/1000</Text>
+                <Button
+                  title={posting ? 'Posting…' : 'Post comment'}
+                  onPress={postComment}
+                  loading={posting}
+                  disabled={!comment.trim()}
+                  variant="navy"
+                  style={{ paddingVertical: 10, paddingHorizontal: 16 }}
+                />
+              </View>
+            </Card>
+          ) : (
+            <Text style={{ fontSize: 11.5, color: colors.mist2, marginBottom: 10 }}>Watch and review this film to join the comments.</Text>
+          )}
+          {(t.comments || []).map((c) => (
+            <View key={c.id || c._id} style={styles.comment}>
+              <Avatar label={c.user?.name?.[0] || '?'} color={c.user?.avatarColor || colors.navy} size={28} />
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: colors.navyInk }}>{c.user?.name || 'User'}</Text>
+                  {c.user?.role === 'creator' ? <Chip label="Creator" tone="navy" /> : null}
+                  <Text style={{ fontSize: 10.5, color: colors.mist2 }}>{timeAgo(c.createdAt)}</Text>
+                </View>
+                <Text style={{ fontSize: 12.5, color: colors.mist, lineHeight: 18, marginTop: 3 }}>{c.body}</Text>
+                {c.canDelete ? (
+                  <Pressable onPress={() => removeComment(c.id || c._id)} hitSlop={8} style={{ marginTop: 6 }}>
+                    <Text style={{ fontSize: 11.5, color: colors.mist2, fontWeight: '600' }}>Delete</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+          ))}
+        </View>
       </Pad>
     </Screen>
   );
+}
+
+function timeAgo(d) {
+  const s = Math.max(0, (Date.now() - new Date(d).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
 }
 
 const styles = StyleSheet.create({
   playBtn: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)' },
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 16 },
   modalCard: { backgroundColor: colors.navyInk, borderRadius: 18, padding: 14 },
+  doneCard: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 13, backgroundColor: colors.greenSoft, borderColor: '#CFE6DA', borderWidth: 1 },
+  comment: { flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.line },
 });

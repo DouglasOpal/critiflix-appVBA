@@ -57,3 +57,21 @@ services:
         sync: false
       - key: PAYSTACK_CALLBACK_URL
         sync: false
+      # --- critiflix.net domain ---
+      - key: PUBLIC_SITE_URL
+        value: https://critiflix.net
+      - key: PUBLIC_API_URL
+        value: https://api.critiflix.net
+      - key: CONTACT_TO
+        value: hello@critiflix.net
+      # --- Cloudflare R2 media storage (uploads no longer go to the server folder) ---
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        value: critiflix-media
+      - key: R2_PUBLIC_URL
+        value: https://media.critiflix.net

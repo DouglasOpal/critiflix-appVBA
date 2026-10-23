@@ -29,7 +29,7 @@ export default function Referrals() {
         <Card style={{ padding: 14, marginBottom: 14 }}>
           <Eyebrow tone="mist">Your link</Eyebrow>
           <View style={{ marginTop: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.line, borderStyle: 'dashed', borderRadius: 11, padding: 11, backgroundColor: colors.paper }}>
-            <Text style={{ fontSize: 12, color: colors.navy }}>{data?.link?.replace('https://', '') || 'critiflix.app/r/…'}</Text>
+            <Text style={{ fontSize: 12, color: colors.navy }}>{data?.link?.replace('https://', '') || 'critiflix.net/r/…'}</Text>
             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.red }}>Copy</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 11 }}>

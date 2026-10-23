@@ -36,17 +36,59 @@ A self-contained `server/Dockerfile` is included. Use **Root Directory** = (repo
 
 ## 4. Paystack (payments)
 - Dashboard → Settings → API Keys: set `PAYSTACK_SECRET_KEY` and `PAYSTACK_PUBLIC_KEY` (use `sk_test_…`/`pk_test_…` for testing).
-- Set `PAYSTACK_CALLBACK_URL=https://<your-service>.onrender.com/api/me/subscribe/callback`.
-- Add a webhook in Paystack pointing to `https://<your-service>.onrender.com/api/me/subscribe/webhook` (if your build uses webhooks). Without keys, subscription/cashout flows simulate.
+- Set `PAYSTACK_CALLBACK_URL=https://api.critiflix.net/api/me/subscribe/callback`.
+- Add a webhook in Paystack pointing to `https://api.critiflix.net/api/webhooks/paystack`. Plans are activated by this webhook. Without keys, subscription/cashout flows simulate.
 
-## 5. Point the mobile app at Render
-In `mobile/.env`:
+## 5. Point the mobile app at the API
+Builds use `EXPO_PUBLIC_API_BASE` from `mobile/eas.json`, now `https://api.critiflix.net`
+(the app also falls back to that address). For local testing put your own value in `mobile/.env`:
 ```
-EXPO_PUBLIC_API_BASE=https://critiflix-api.onrender.com
+EXPO_PUBLIC_API_BASE=http://192.168.1.20:4000
 ```
-Then `npx expo start -c`. (No `:4000` and no trailing slash — Render serves on 443.)
+Then `npx expo start -c`. No trailing slash.
 
 ## Notes
 - **Free plan sleeps:** the free Render service spins down when idle; the first request after idle takes ~30–50s to wake. Fine for testing.
-- **Uploads are ephemeral on Render's free disk** — files in `server/uploads` are lost on redeploy/restart. For durable media use a persistent disk or move uploads to S3/Cloudinary later.
+- **Media lives on Cloudflare R2** once the `R2_*` variables are set (section 6). Without them, uploads fall back to `server/uploads`, which Render wipes on every redeploy or restart.
 - Never commit a real `.env`. Use `server/.env.example` as the template; set real values in Render's dashboard.
+
+## 6. critiflix.net + Cloudflare R2 media (October 2026 update)
+
+### Domain
+| Address | Points to |
+|---|---|
+| `critiflix.net`, `www.critiflix.net` | Website (Cloudflare Pages) |
+| `api.critiflix.net` | This API on Render (custom domain on the web service). Admin console at `/admin` |
+| `media.critiflix.net` | Cloudflare R2 bucket (trailers, posters, avatars, logos) |
+
+1. Render → web service → **Settings → Custom Domains** → add `api.critiflix.net`; add the CNAME it shows in Cloudflare DNS (grey cloud / DNS only).
+2. Set `PUBLIC_SITE_URL`, `PUBLIC_API_URL` and `CONTACT_TO` (defaults are already the critiflix.net values in `render.yaml`).
+3. Set `EMAIL_FROM=no-reply@critiflix.net` after authenticating `critiflix.net` in SendGrid (**Settings → Sender Authentication → Authenticate a Domain**).
+4. The website contact form posts to `https://api.critiflix.net/contact` and is emailed to `CONTACT_TO`.
+
+### Cloudflare R2 (uploads no longer go to the server folder)
+1. Cloudflare dashboard → **R2 Object Storage** → **Create bucket** → name `critiflix-media`.
+2. Bucket → **Settings → Public access → Custom Domains → Connect domain** → `media.critiflix.net`. Cloudflare adds the DNS record itself.
+3. R2 → **Manage API tokens → Create API token** → permission **Object Read & Write**, limited to `critiflix-media`. Copy the **Access Key ID**, **Secret Access Key** and your **Account ID**.
+4. Render → Environment: set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (`R2_BUCKET` and `R2_PUBLIC_URL` are pre-filled). Redeploy.
+5. Check: `GET https://api.critiflix.net/api/config` shows `"storage": "cloudflare-r2"`.
+6. Optional: move older `/uploads/...` media that still exists on your computer:
+   ```
+   cd server
+   node src/scripts/migrate-uploads-to-r2.js           # dry run
+   node src/scripts/migrate-uploads-to-r2.js --apply   # upload + rewrite database links
+   ```
+   Links whose files are already gone are listed so creators can re-upload them.
+
+New uploads return full URLs such as `https://media.critiflix.net/trailers/1729700000000_ab12cd34.mp4`.
+Deleting a title, or replacing its trailer or poster, removes the old file from R2.
+
+### Points economy (admin → Points & payouts)
+- **Earning benchmark** (default 1000): the first points each critic earns are a benchmark with no cash value. Only points earned after it are cashable. The old rule (no points at all until 50 reviews) is removed.
+- **Naira per point** (default ₦0.20): value of each cashable point. It also sets how many points new creator campaigns fund (half the package price ÷ rate).
+- Existing critics keep their current cashable balance. Their next earnings count toward the benchmark first.
+
+### Reviews and comments
+- One review per critic per title (enforced on the server). After reviewing, the title shows a comment box instead, with no rating and no points.
+- Critics comment after reviewing; the title's creator and admins can always comment. Authors, the creator and admins can delete comments. Admin → **Reviews** lists comments for moderation.
+- Review, comment and cashout buttons show a spinner and ignore repeat taps while the request is in flight.

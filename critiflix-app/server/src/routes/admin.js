@@ -8,6 +8,7 @@ import { Integration } from '../models/Integration.js';
 import { Subscription } from '../models/Subscription.js';
 import { Announcement } from '../models/Announcement.js';
 import { Review } from '../models/Review.js';
+import { Comment } from '../models/Comment.js';
 import { Follow } from '../models/Follow.js';
 import { notifyUsers } from '../services/notify.js';
 import { sendWhatsApp, whatsappEnabled } from '../services/twilio.js';
@@ -18,6 +19,7 @@ import { protect, requireRole } from '../middleware/auth.js';
 import { PLANS, getPlan, normalizePlan } from '../points.js';
 import { getSubscriptionRevenue, getPayoutBudget, activatePlan } from '../services/billing.js';
 import { createTransferRecipient, initiateTransfer, newReference } from '../services/paystack.js';
+import { getEconomy, updateEconomy, describeEconomy, ECONOMY_LIMITS } from '../services/settings.js';
 
 const r = Router();
 r.use(protect(), requireRole('admin'));
@@ -48,10 +50,12 @@ r.get('/overview', asyncHandler(async (req, res) => {
 
 r.get('/users', asyncHandler(async (req, res) => {
   const users = await User.find({ role: { $ne: 'admin' } }).sort({ createdAt: -1 }).lean();
+  const econ = await getEconomy();
   res.json(users.map((u) => ({
     id: u._id, code: u.code, name: u.name, email: u.email, phone: u.phone, role: u.role, status: u.status,
     plan: u.plan, points: u.points, followers: u.followers, reviewCount: u.reviewCount,
-    eligible: (u.followers || 0) >= 200 && (u.reviewCount || 0) >= 1000,
+    benchmarkPoints: u.benchmarkPoints || 0, lifetimePoints: u.lifetimePoints || 0,
+    eligible: (u.benchmarkPoints || 0) >= econ.earnThreshold,   // passed the non-cash benchmark
     whatsapp: u.whatsapp,
     emailVerified: u.emailVerified, phoneVerified: u.phoneVerified,
     channelUrl: u.channelUrl, avatarColor: u.avatarColor, createdAt: u.createdAt,
@@ -376,6 +380,44 @@ r.delete('/reviews/:id', asyncHandler(async (req, res) => {
   if (!rv) throw notFound('Review not found');
   const agg = await Review.aggregate([{ $match: { title: rv.title } }, { $group: { _id: '$title', avg: { $avg: '$score' }, count: { $sum: 1 } } }]);
   await Title.findByIdAndUpdate(rv.title, { reviewCount: agg[0]?.count || 0, score: agg[0] ? Math.round(agg[0].avg * 10) / 10 : null });
+  res.json({ ok: true });
+}));
+
+// ---- Points economy settings: earning benchmark + Naira-per-point rate ----
+r.get('/settings/economy', asyncHandler(async (req, res) => {
+  const econ = await getEconomy({ fresh: true });
+  const [critics, pastBenchmark] = await Promise.all([
+    User.countDocuments({ role: 'critic' }),
+    User.countDocuments({ role: 'critic', benchmarkPoints: { $gte: econ.earnThreshold } }),
+  ]);
+  res.json({ ...describeEconomy(econ), limits: ECONOMY_LIMITS, stats: { critics, pastBenchmark } });
+}));
+
+r.put('/settings/economy', asyncHandler(async (req, res) => {
+  const { earnThreshold, nairaPerPoint } = req.body || {};
+  let econ;
+  try {
+    econ = await updateEconomy({ earnThreshold, nairaPerPoint }, req.user._id);
+  } catch (e) { throw badRequest(e.message); }
+  res.json(describeEconomy(econ));
+}));
+
+// ---- Comments moderation: view + delete any comment ----
+r.get('/comments', asyncHandler(async (req, res) => {
+  const comments = await Comment.find({})
+    .populate('user', 'name code role')
+    .populate('title', 'title code')
+    .sort({ createdAt: -1 }).limit(500).lean();
+  res.json(comments.map((c) => ({
+    id: c._id, body: c.body, createdAt: c.createdAt,
+    user: c.user?.name, userRole: c.user?.role,
+    title: c.title?.title, titleId: c.title?._id,
+  })));
+}));
+
+r.delete('/comments/:id', asyncHandler(async (req, res) => {
+  const c = await Comment.findByIdAndDelete(req.params.id);
+  if (!c) throw notFound('Comment not found');
   res.json({ ok: true });
 }));
 

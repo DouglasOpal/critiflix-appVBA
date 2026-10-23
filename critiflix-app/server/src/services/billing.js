@@ -2,12 +2,15 @@ import { User } from '../models/User.js';
 import { Subscription } from '../models/Subscription.js';
 import { Cashout } from '../models/Cashout.js';
 import { PLANS, PAYOUT_POOL_RATIO, campaignPool, getPlan } from '../points.js';
+import { getEconomy } from './settings.js';
 
 // Activate a creator's CAMPAIGN package (simulated path + webhook). Buying a plan
-// tops up the creator's points pool by campaignPool(plan); the pool then depletes
-// as critics earn from their titles. Not a monthly subscription.
+// tops up the creator's points pool by campaignPool(plan) at the current
+// Naira-per-point rate; the pool then depletes as critics earn from their
+// titles. Not a monthly subscription.
 export async function activatePlan(user, plan, { reference = null, providerRef = null } = {}) {
-  const pool = campaignPool(plan);
+  const econ = await getEconomy();
+  const pool = campaignPool(plan, econ.nairaPerPoint);
   user.plan = plan;
   user.campaignRemaining = (user.campaignRemaining || 0) + pool;
   user.campaignPool = user.campaignRemaining; // denominator resets to full after a top-up

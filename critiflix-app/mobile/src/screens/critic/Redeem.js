@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, Pressable, Alert, StyleSheet, TextInput } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Pressable, Alert, StyleSheet, TextInput, ActivityIndicator } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 import { Screen, TopBand, Pad } from '../../components/Screen';
@@ -14,8 +14,24 @@ const DESTS = [
 
 export default function Redeem({ route, navigation }) {
   const { refresh } = useAuth();
-  const balance = route.params?.balance ?? 0;
-  const [amount] = useState(Math.min(8000, balance));
+  const [balance, setBalance] = useState(route.params?.balance ?? 0);
+  const [amount, setAmount] = useState(route.params?.balance ?? 0);   // cash out the full cashable balance
+  const [rate, setRate] = useState(null);                              // ₦ per point, set by admin
+  const [fee, setFee] = useState(25);
+  const busyRef = useRef(false);
+
+  // Always use the live rate and cashable balance from the server.
+  useEffect(() => {
+    api.points().then((p) => {
+      setBalance(p.balance || 0);
+      setAmount(p.balance || 0);
+      setRate(p.nairaPerPoint);
+      if (typeof p.cashoutFee === 'number') setFee(p.cashoutFee);
+    }).catch((e) => Alert.alert('Could not load your balance', e.message));
+  }, []);
+  const gross = rate ? Math.round(amount * rate * 100) / 100 : 0;
+  const receive = Math.max(0, Math.round((gross - fee) * 100) / 100);
+  const naira = (n) => `₦${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const [sel, setSel] = useState(0);
   const [step, setStep] = useState('choose');      // 'choose' -> 'verify'
   const [otpChannel, setOtpChannel] = useState('phone');
@@ -25,27 +41,32 @@ export default function Redeem({ route, navigation }) {
 
   // Step 1: send an SMS/WhatsApp token to authorise the cashout.
   const startCashout = async () => {
+    if (busyRef.current) return;
+    if (receive <= 0) return Alert.alert('Not enough points', `Your points must be worth more than the ${naira(fee)} cashout fee.`);
+    busyRef.current = true;
     setBusy(true);
     try {
       const res = await api.redeemOtp(otpChannel);
       setSentTo(res.to || 'your number');
       setStep('verify');
     } catch (e) { Alert.alert('Could not send code', e.message); }
-    finally { setBusy(false); }
+    finally { busyRef.current = false; setBusy(false); }
   };
 
   // Step 2: confirm the cashout with the code.
   const cashout = async () => {
     if (code.trim().length < 6) return Alert.alert('Code', 'Enter the 6-digit code sent to your number.');
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const d = DESTS[sel];
       const res = await api.redeem({ points: amount, method: d.key, destination: d.dest, code: code.trim(), channel: otpChannel });
       await refresh();
-      Alert.alert('Cashout requested', `₦${res.cashout.amount.toLocaleString()} to ${d.dest}. New balance: ${res.balance.toLocaleString()} pts.`);
+      Alert.alert('Cashout requested', `${naira(res.cashout.amount)} to ${d.dest}. New balance: ${res.balance.toLocaleString()} pts.`);
       navigation.goBack();
     } catch (e) { Alert.alert('Could not cash out', e.message); }
-    finally { setBusy(false); }
+    finally { busyRef.current = false; setBusy(false); }
   };
 
   return (
@@ -56,7 +77,9 @@ export default function Redeem({ route, navigation }) {
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginTop: 4 }}>
           <Score value={amount.toLocaleString()} suffix=" pts" size={42} />
         </View>
-        <Text style={{ fontSize: 12, color: colors.mist2 }}>= <Text style={{ color: colors.red, fontWeight: '700' }}>₦{amount.toLocaleString()}</Text> · rate 1 pt = ₦1</Text>
+        {rate == null ? <ActivityIndicator color={colors.red} style={{ marginTop: 6 }} /> : (
+          <Text style={{ fontSize: 12, color: colors.mist2 }}>= <Text style={{ color: colors.red, fontWeight: '700' }}>{naira(gross)}</Text> · rate 1 pt = {naira(rate)}</Text>
+        )}
         <View style={{ alignSelf: 'stretch', marginTop: 16, marginHorizontal: 4 }}>
           <Bar pct={(amount / Math.max(balance, 1)) * 100} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
@@ -89,7 +112,7 @@ export default function Redeem({ route, navigation }) {
         ))}
         <Card style={styles.fee}>
           <Text style={{ color: colors.mist, fontSize: 12.5 }}>You’ll receive</Text>
-          <Text style={{ fontWeight: '700', color: colors.navyInk }}>₦{(amount - 25).toLocaleString()}</Text>
+          <Text style={{ fontWeight: '700', color: colors.navyInk }}>{naira(receive)}</Text>
         </Card>
         {step === 'choose' ? (
           <View>
@@ -101,7 +124,7 @@ export default function Redeem({ route, navigation }) {
                 </Pressable>
               ))}
             </View>
-            <Button title={busy ? 'Sending code…' : `Cash out ₦${amount.toLocaleString()}`} onPress={startCashout} disabled={busy} />
+            <Button title={busy ? 'Sending code…' : `Cash out ${naira(receive)}`} onPress={startCashout} loading={busy} disabled={rate == null || receive <= 0} />
           </View>
         ) : (
           <View>
@@ -109,7 +132,7 @@ export default function Redeem({ route, navigation }) {
             <Card style={{ padding: 4, marginBottom: 12 }}>
               <TextInput value={code} onChangeText={setCode} placeholder="______" placeholderTextColor={colors.mist2} keyboardType="number-pad" maxLength={6} style={{ fontSize: 22, letterSpacing: 8, textAlign: 'center', color: colors.navyInk, paddingVertical: 12, fontWeight: '700' }} />
             </Card>
-            <Button title={busy ? 'Verifying…' : `Confirm cashout ₦${amount.toLocaleString()}`} onPress={cashout} disabled={busy} />
+            <Button title={busy ? 'Verifying…' : `Confirm cashout ${naira(receive)}`} onPress={cashout} loading={busy} />
             <Pressable onPress={startCashout} disabled={busy} style={{ marginTop: 12, alignItems: 'center' }}><Text style={{ color: colors.red, fontSize: 12.5, fontWeight: '600' }}>Resend code</Text></Pressable>
           </View>
         )}

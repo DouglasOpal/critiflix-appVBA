@@ -3,9 +3,11 @@
 // machine's LAN IP via mobile/.env:  EXPO_PUBLIC_API_BASE=http://192.168.1.20:4000
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const API_BASE = "https://critiflix.onrender.com";
+// Set per build in eas.json (EXPO_PUBLIC_API_BASE); defaults to the live API.
+export const API_BASE = (process.env.EXPO_PUBLIC_API_BASE || "https://api.critiflix.net").replace(/\/+$/, "");
 
-// Build a full URL for media stored on the API (posters/trailers come back as /uploads/...).
+// Build a full URL for media. New uploads are full Cloudflare R2 links
+// (https://media.critiflix.net/...); older ones are /uploads/... paths on the API.
 export const mediaUrl = (path) => (!path ? null : /^https?:\/\//.test(path) ? path : `${API_BASE}${path}`);
 
 let accessToken = null;
@@ -122,6 +124,8 @@ export const api = {
   savePushToken: (token) => request('/me/push-token', { method: 'POST', body: { token } }),
   likeReview: (titleId, reviewId) => request(`/titles/${titleId}/reviews/${reviewId}/like`, { method: 'POST', body: {} }),
   deleteReviewAsCreator: (titleId, reviewId) => request(`/titles/${titleId}/reviews/${reviewId}`, { method: 'DELETE' }),
+  addComment: (titleId, body) => request(`/titles/${titleId}/comments`, { method: 'POST', body: { body } }),
+  deleteComment: (titleId, commentId) => request(`/titles/${titleId}/comments/${commentId}`, { method: 'DELETE' }),
   referrals: () => request('/me/referrals'),
   subscribe: (plan) => request('/me/subscribe', { method: 'POST', body: { plan } }),
   studio: () => request('/me/studio'),

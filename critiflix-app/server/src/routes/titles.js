@@ -4,11 +4,14 @@ import { User } from '../models/User.js';
 import { Review } from '../models/Review.js';
 import { Watch } from '../models/Watch.js';
 import { PointsLedger } from '../models/PointsLedger.js';
+import { Comment } from '../models/Comment.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { badRequest, notFound, conflict } from '../utils/ApiError.js';
 import { titleCode } from '../utils/ids.js';
 import { protect, requireRole } from '../middleware/auth.js';
-import { award } from '../services/pointsService.js';
+import { award, pointsSummary } from '../services/pointsService.js';
+import { getEconomy } from '../services/settings.js';
+import { deleteMedia } from '../services/storage.js';
 import { POINTS, PLANS, titleWatchPoints, runtimeToMinutes, WATCH_REQUIRED_PCT, getPlan, normalizePlan } from '../points.js';
 import { MAX_VIDEO_BYTES, MAX_TRAILER_SECONDS } from './uploads.js';
 
@@ -71,7 +74,17 @@ r.get('/:id', protect(false), asyncHandler(async (req, res) => {
   let watch = null;
   if (req.user) watch = await Watch.findOne({ critic: req.user._id, title: t._id }).lean();
   const canManageReviews = isOwner || isAdmin; // creators manage their own titles' reviews
-  res.json({ ...t, id: t._id, reward: t.watchPoints, requiredWatchPct: WATCH_REQUIRED_PCT, reviews, watch, canManageReviews });
+  // Once a critic has reviewed (and claimed their points) the title is
+  // comment-only for them: no second review, no more points.
+  const myReview = uid ? reviews.find((rv) => String(rv.critic?._id || rv.critic) === uid) || null : null;
+  const canComment = !!(myReview || isOwner || isAdmin);
+  const comments = await loadComments(t._id, uid, isOwner || isAdmin);
+  res.json({
+    ...t, id: t._id, reward: t.watchPoints, requiredWatchPct: WATCH_REQUIRED_PCT,
+    reviews, watch, canManageReviews,
+    hasReviewed: !!myReview, myReviewId: myReview ? myReview.id : null,
+    canComment, comments,
+  });
 }));
 
 // Creator submits a title. watchPoints are set from plan + film length (50–150).
@@ -137,11 +150,14 @@ r.patch('/:id', protect(), requireRole('creator'), asyncHandler(async (req, res)
   if (title !== undefined) t.title = title;
   if (genre !== undefined) t.genre = genre;
   if (runtime !== undefined) { t.runtime = runtime; t.runtimeMinutes = runtimeToMinutes(runtime); t.watchPoints = titleWatchPoints(req.user.plan, t.runtimeMinutes, t.boost || 0); }
-  if (trailerUrl !== undefined) t.trailerUrl = trailerUrl;
+  const replaced = [];
+  if (trailerUrl !== undefined) { if (t.trailerUrl !== trailerUrl) replaced.push(t.trailerUrl); t.trailerUrl = trailerUrl; }
   if (movieUrl !== undefined) t.movieUrl = movieUrl;
-  if (posterSmall !== undefined) t.posterSmall = posterSmall;
-  if (posterLarge !== undefined) t.posterLarge = posterLarge;
+  if (posterSmall !== undefined) { if (t.posterSmall !== posterSmall) replaced.push(t.posterSmall); t.posterSmall = posterSmall; }
+  if (posterLarge !== undefined) { if (t.posterLarge !== posterLarge) replaced.push(t.posterLarge); t.posterLarge = posterLarge; }
   await t.save();
+  // Old files that were swapped out are removed from Cloudflare R2.
+  await Promise.all(replaced.filter(Boolean).map(deleteMedia));
   await t.populate('creator', creatorLite);
   res.json(shape(t));
 }));
@@ -157,8 +173,11 @@ r.delete('/:id', protect(), asyncHandler(async (req, res) => {
   await Promise.all([
     Review.deleteMany({ title: t._id }),
     Watch.deleteMany({ title: t._id }),
+    Comment.deleteMany({ title: t._id }),
     Title.findByIdAndDelete(t._id),
   ]);
+  // Remove its trailer and posters from Cloudflare R2 (no-op for other links).
+  await Promise.all([t.trailerUrl, t.posterSmall, t.posterLarge].map(deleteMedia));
   res.json({ ok: true, id: t._id });
 }));
 
@@ -201,7 +220,7 @@ r.post('/:id/watch', protect(), requireRole('critic'), asyncHandler(async (req, 
       const creator = await User.findById(t.creator);
       const grant = Math.min(t.watchPoints, Math.max(0, creator?.campaignRemaining || 0));
       if (grant > 0) {
-        awarded = await award(req.user, 'watch', grant, t.title, t._id);
+        awarded = (await award(req.user, 'watch', grant, t.title, t._id)).awarded;
         creator.campaignRemaining -= grant;
         await creator.save();
       }
@@ -223,6 +242,11 @@ r.post('/:id/review', protect(), requireRole('critic'), asyncHandler(async (req,
   const w = await Watch.findOne({ critic: req.user._id, title: t._id });
   if (!w || w.percent < WATCH_REQUIRED_PCT) {
     throw badRequest(`Watch at least ${Math.round(WATCH_REQUIRED_PCT * 100)}% of the film before reviewing`);
+  }
+
+  // One review per title. After that the critic can only comment.
+  if (await Review.exists({ title: t._id, critic: req.user._id })) {
+    throw conflict('You have already reviewed this title. You can still add a comment.');
   }
 
   const { rating, headline, body, tags } = req.body || {};
@@ -248,24 +272,33 @@ r.post('/:id/review', protect(), requireRole('critic'), asyncHandler(async (req,
   if (t.reviewCount >= 12) t.status = 'scored';
   await t.save();
 
-  // reviewCount counts toward earning eligibility and must grow even pre-eligibility.
   req.user.reviewCount = (req.user.reviewCount || 0) + 1;
   // Award review/rating points ONCE per title — funded by the creator's campaign
   // pool (and only for paid-plan titles). Depletes the pool; nothing when exhausted.
   const alreadyAwarded = await PointsLedger.exists({ user: req.user._id, title: t._id, type: { $in: ['review', 'rating'] } });
   let earned = 0;
+  let toBenchmark = 0;
   if (!alreadyAwarded && t.watchPoints > 0) {
     const creator = await User.findById(t.creator);
     let pool = Math.max(0, creator?.campaignRemaining || 0);
     const grantReview = Math.min(POINTS.review, pool); pool -= grantReview;
     const grantRating = Math.min(POINTS.rating, pool); pool -= grantRating;
-    if (grantReview > 0) earned += await award(req.user, 'review', grantReview, t.title, t._id);
-    if (grantRating > 0) earned += await award(req.user, 'rating', grantRating, t.title, t._id);
+    for (const [type, grant] of [['review', grantReview], ['rating', grantRating]]) {
+      if (grant <= 0) continue;
+      const a = await award(req.user, type, grant, t.title, t._id);
+      earned += a.awarded;
+      toBenchmark += a.toBenchmark;
+    }
     if (creator && (grantReview + grantRating) > 0) { creator.campaignRemaining = pool; await creator.save(); }
   }
   await req.user.save();
 
-  res.status(201).json({ review, awarded: earned, score: t.score, balance: req.user.points, reviewCount: req.user.reviewCount });
+  const summary = pointsSummary(req.user, await getEconomy());
+  res.status(201).json({
+    review, awarded: earned, toBenchmark, cashable: earned - toBenchmark,
+    score: t.score, balance: req.user.points, reviewCount: req.user.reviewCount,
+    benchmark: summary.benchmark,
+  });
 }));
 
 // Like / unlike a review (critics and creators). Toggles.
@@ -292,6 +325,59 @@ r.delete('/:id/reviews/:reviewId', protect(), requireRole('creator'), asyncHandl
   t.score = agg[0] ? Math.round(agg[0].avg * 10) / 10 : null;
   await t.save();
   res.json({ ok: true, reviewCount: t.reviewCount, score: t.score });
+}));
+
+// ---- Comments (no rating, no points) ----
+const COMMENT_MAX = 1000;
+const userLite = 'name code role avatarColor avatarUrl';
+
+async function loadComments(titleId, uid, canModerate) {
+  const rows = await Comment.find({ title: titleId }).populate('user', userLite).sort({ createdAt: -1 }).limit(200).lean();
+  return rows.map((c) => ({
+    id: c._id, body: c.body, createdAt: c.createdAt,
+    user: c.user ? { id: c.user._id, name: c.user.name, role: c.user.role, avatarColor: c.user.avatarColor, avatarUrl: c.user.avatarUrl } : null,
+    canDelete: !!(canModerate || (uid && c.user && String(c.user._id) === uid)),
+  }));
+}
+
+// Comment on a title. Critics can comment once they've reviewed it; the
+// title's creator and admins can always comment.
+r.post('/:id/comments', protect(), asyncHandler(async (req, res) => {
+  const t = await Title.findById(req.params.id);
+  if (!t) throw notFound('Title not found');
+  const isOwner = String(t.creator) === String(req.user._id);
+  const isAdmin = req.user.role === 'admin';
+  if (!isOwner && !isAdmin) {
+    const reviewed = await Review.exists({ title: t._id, critic: req.user._id });
+    if (!reviewed) throw badRequest('Watch and review this title before commenting');
+  }
+  const body = String(req.body?.body || '').trim();
+  if (!body) throw badRequest('Write a comment first');
+  if (body.length > COMMENT_MAX) throw badRequest(`Comments can be up to ${COMMENT_MAX} characters`);
+
+  // Guard against double-taps: the same text from the same person within 30s is ignored.
+  const dup = await Comment.findOne({ title: t._id, user: req.user._id, body, createdAt: { $gte: new Date(Date.now() - 30_000) } }).lean();
+  const c = dup || await Comment.create({ title: t._id, user: req.user._id, body });
+  await Comment.populate(c, { path: 'user', select: userLite });
+  const u = c.user;
+  res.status(dup ? 200 : 201).json({
+    id: c._id, body: c.body, createdAt: c.createdAt, duplicate: !!dup,
+    user: u ? { id: u._id, name: u.name, role: u.role, avatarColor: u.avatarColor, avatarUrl: u.avatarUrl } : null,
+    canDelete: true,
+  });
+}));
+
+// Delete a comment: its author, the title's creator, or an admin.
+r.delete('/:id/comments/:commentId', protect(), asyncHandler(async (req, res) => {
+  const c = await Comment.findOne({ _id: req.params.commentId, title: req.params.id });
+  if (!c) throw notFound('Comment not found');
+  const t = await Title.findById(req.params.id).select('creator').lean();
+  const allowed = String(c.user) === String(req.user._id)
+    || (t && String(t.creator) === String(req.user._id))
+    || req.user.role === 'admin';
+  if (!allowed) throw badRequest('You can only delete your own comments');
+  await c.deleteOne();
+  res.json({ ok: true, id: c._id });
 }));
 
 export default r;

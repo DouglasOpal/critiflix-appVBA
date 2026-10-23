@@ -11,25 +11,32 @@ import { badRequest, forbidden } from '../utils/ApiError.js';
 import { protect } from '../middleware/auth.js';
 import { sendOtp, verifyOtp } from '../services/otp.js';
 import { cashoutCode } from '../utils/ids.js';
-import { POINTS, PLANS, REDEEM_RATE, CASHOUT_FEE, isEligibleToEarn, EARN_MIN_REVIEWS, getPlan } from '../points.js';
+import { POINTS, PLANS, CASHOUT_FEE, getPlan } from '../points.js';
 import { initializeTransaction, newReference } from '../services/paystack.js';
 import { activatePlan, getPayoutBudget } from '../services/billing.js';
+import { getEconomy } from '../services/settings.js';
+import { pointsSummary, releaseExcessBenchmark } from '../services/pointsService.js';
 import { env } from '../config/env.js';
 
 const r = Router();
 r.use(protect());
 
-// Critic: points balance + earn config + ledger.
+// Critic: cashable balance, benchmark progress, live rate + ledger.
 r.get('/points', asyncHandler(async (req, res) => {
+  const econ = await getEconomy();
+  if (await releaseExcessBenchmark(req.user, econ)) await req.user.save();
   const ledger = await PointsLedger.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(100).lean();
+  const summary = pointsSummary(req.user, econ);
   res.json({
-    balance: req.user.points || 0,
-    nairaValue: (req.user.points || 0) * REDEEM_RATE,
-    earnRates: { watch: '50–150', ...POINTS },
+    ...summary,
+    cashoutFee: CASHOUT_FEE,
+    canCashout: summary.balance > 0 && summary.balance * econ.nairaPerPoint > CASHOUT_FEE,
+    earnRates: { watch: 'up to 50', ...POINTS },
+    // Kept for app builds released before the benchmark existed.
     eligibility: {
-      eligible: isEligibleToEarn(req.user),
-      reviews: req.user.reviewCount || 0,
-      minReviews: EARN_MIN_REVIEWS,
+      eligible: summary.benchmark.reached,
+      reviews: summary.benchmark.earned,
+      minReviews: summary.benchmark.threshold,
     },
     ledger,
   });
@@ -56,9 +63,15 @@ r.post('/redeem/otp', asyncHandler(async (req, res) => {
 
 // Critic: redeem points -> cashout request (settled later via Paystack transfer).
 r.post('/redeem', asyncHandler(async (req, res) => {
-  const { points, method, destination, bankCode, accountNumber, code, channel } = req.body || {};
-  if (!isEligibleToEarn(req.user)) {
-    throw badRequest(`Cashout unlocks after ${EARN_MIN_REVIEWS} reviews. You have ${req.user.reviewCount || 0}.`);
+  const { method, destination, bankCode, accountNumber, code, channel } = req.body || {};
+  const points = Math.floor(Number(req.body?.points) || 0);
+  const econ = await getEconomy();
+  if (await releaseExcessBenchmark(req.user, econ)) await req.user.save();
+  if ((req.user.points || 0) <= 0) {
+    const s = pointsSummary(req.user, econ);
+    throw badRequest(s.benchmark.reached
+      ? 'You have no cashable points yet.'
+      : `Cashout opens after your first ${s.benchmark.threshold.toLocaleString()} points. You need ${s.benchmark.remaining.toLocaleString()} more.`);
   }
   // SMS/WhatsApp token verification (requirement 4).
   const number = req.user.whatsapp || req.user.phone;
@@ -68,10 +81,10 @@ r.post('/redeem', asyncHandler(async (req, res) => {
   if (!v.ok) throw badRequest(v.reason || 'Invalid verification code');
 
   if (!points || points <= 0) throw badRequest('Enter a points amount');
-  if (points > (req.user.points || 0)) throw badRequest('Not enough points');
+  if (points > (req.user.points || 0)) throw badRequest('Not enough cashable points');
   if (!method || !destination) throw badRequest('Choose a payout destination');
 
-  const amount = points * REDEEM_RATE - CASHOUT_FEE;
+  const amount = Math.round((points * econ.nairaPerPoint - CASHOUT_FEE) * 100) / 100;
   if (amount <= 0) throw badRequest('Amount is below the cashout fee');
 
   // Payouts draw from a pool of 50% of subscription revenue.
@@ -102,7 +115,7 @@ r.get('/referrals', asyncHandler(async (req, res) => {
   ]);
   res.json({
     code: req.user.referralCode || req.user.code,
-    link: `https://critiflix.app/r/${req.user.referralCode || req.user.code}`,
+    link: `${env.siteUrl}/r/${req.user.referralCode || req.user.code}`,
     rewardPerReferral: POINTS.referral,
     joined: referred.length,
     reviewed: referred.filter((u) => (u.reviewCount || 0) > 0).length,

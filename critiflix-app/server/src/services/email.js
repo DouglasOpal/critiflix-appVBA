@@ -17,11 +17,14 @@ function escapeHtml(s) {
 
 // Sends a single email. `html` is optional — if omitted, a simple paragraph
 // wrapper around `text` is used so callers can pass plain strings.
-export async function sendEmail(to, subject, text, html) {
+// `replyTo` (optional) is { email, name } — used by the website contact form so
+// replies go straight to the visitor.
+export async function sendEmail(to, subject, text, html, replyTo) {
   if (!emailEnabled) return { simulated: true };
   const body = {
     personalizations: [{ to: [{ email: to }] }],
     from: { email: env.emailFrom, name: env.emailFromName || 'CritiFlix' },
+    ...(replyTo?.email ? { reply_to: replyTo } : {}),
     subject,
     content: [
       { type: 'text/plain', value: text },

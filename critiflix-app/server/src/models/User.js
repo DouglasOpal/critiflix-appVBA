@@ -27,7 +27,9 @@ const userSchema = new Schema(
     },
 
     // ---- critic fields ----
-    points: { type: Number, default: 0, min: 0 },     // redeemable points balance
+    points: { type: Number, default: 0, min: 0 },     // cashable points balance (earned beyond the benchmark)
+    benchmarkPoints: { type: Number, default: 0, min: 0 }, // points counted toward the non-cash earning benchmark
+    lifetimePoints: { type: Number, default: 0, min: 0 },  // every point ever earned (benchmark + cashable)
     followers: { type: Number, default: 0 },          // people who follow this user
     following: { type: Number, default: 0 },          // people this user follows
     reviewCount: { type: Number, default: 0 },        // published reviews (eligibility)

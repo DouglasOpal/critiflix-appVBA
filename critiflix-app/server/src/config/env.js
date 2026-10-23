@@ -36,7 +36,21 @@ export const env = {
   // Twilio SendGrid (email OTP + product update alerts; simulate when unset)
   sendgridApiKey: process.env.SENDGRID_API_KEY || '',
   emailFrom: process.env.EMAIL_FROM || '',                         // must be a verified SendGrid sender
-  emailFromName: process.env.EMAIL_FROM_NAME || 'CritiFlix'
+  emailFromName: process.env.EMAIL_FROM_NAME || 'CritiFlix',
+
+  // Public addresses on the critiflix.net domain
+  siteUrl: (process.env.PUBLIC_SITE_URL || 'https://critiflix.net').replace(/\/+$/, ''),
+  apiUrl: (process.env.PUBLIC_API_URL || 'https://api.critiflix.net').replace(/\/+$/, ''),
+  contactTo: process.env.CONTACT_TO || 'hello@critiflix.net',      // inbox for the website contact form
+
+  // Cloudflare R2 media storage (S3-compatible). When unset, uploads fall back
+  // to the local server/uploads folder (development only — not persistent on Render).
+  r2AccountId: process.env.R2_ACCOUNT_ID || '',
+  r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+  r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+  r2Bucket: process.env.R2_BUCKET || 'critiflix-media',
+  r2PublicUrl: (process.env.R2_PUBLIC_URL || 'https://media.critiflix.net').replace(/\/+$/, ''),
+  r2Endpoint: process.env.R2_ENDPOINT || '',   // optional, e.g. https://<account>.eu.r2.cloudflarestorage.com for EU buckets
 };
 
 // Warn (don't crash) if running with insecure defaults outside dev.

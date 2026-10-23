@@ -1,24 +1,28 @@
 import React from 'react';
-import { Text, View, Pressable, StyleSheet } from 'react-native';
+import { Text, View, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { colors, radius, shadow } from '../theme/tokens';
 
-export function Button({ title, onPress, variant = 'red', icon, style, disabled }) {
+// `loading` shows a spinner and blocks presses, so a slow request can't be
+// submitted twice by repeated taps.
+export function Button({ title, onPress, variant = 'red', icon, style, disabled, loading }) {
   const bg = { red: colors.red, navy: colors.navy, yt: colors.yt, wa: colors.wa, ghost: colors.white }[variant];
   const fg = variant === 'ghost' ? colors.navy : colors.white;
+  const off = disabled || loading;
   return (
     <Pressable
-      onPress={onPress}
-      disabled={disabled}
+      onPress={off ? undefined : onPress}
+      disabled={off}
+      accessibilityState={{ disabled: !!off, busy: !!loading }}
       style={({ pressed }) => [
         styles.btn,
-        { backgroundColor: bg, opacity: disabled ? 0.5 : pressed ? 0.9 : 1 },
+        { backgroundColor: bg, opacity: disabled && !loading ? 0.5 : loading ? 0.85 : pressed ? 0.9 : 1 },
         variant === 'ghost' && { borderWidth: 1.5, borderColor: colors.line },
         (variant === 'red' || variant === 'yt') && shadow.red,
         style,
       ]}
     >
-      {icon}
+      {loading ? <ActivityIndicator size="small" color={fg} /> : icon}
       <Text style={[styles.btnText, { color: fg }]}>{title}</Text>
     </Pressable>
   );

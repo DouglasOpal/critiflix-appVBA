@@ -5,13 +5,12 @@ export const POINTS = {
   referral: 250,   // referred critic joins & reviews
 };
 
-// ---- Point → cash conversion: 1 point = ₦0.2 ----
-export const REDEEM_RATE = 0.2;      // 1 point -> ₦0.2
+// ---- Point → cash conversion ----
+// DEFAULT only: the live Naira-per-point rate and the earning benchmark (first
+// 1000 lifetime points are non-cash) are edited in the admin console and read
+// through services/settings.js → getEconomy().
+export const REDEEM_RATE = 0.2;      // default 1 point -> ₦0.2
 export const CASHOUT_FEE = 25;       // flat ₦ fee per cashout
-
-// ---- Earning + cashout eligibility: 50 watched-&-reviewed titles ----
-export const EARN_MIN_FOLLOWERS = 0;
-export const EARN_MIN_REVIEWS = 50;
 
 // ---- Watch gate ----
 export const WATCH_REQUIRED_PCT = 0.75;
@@ -42,9 +41,11 @@ export function getPlan(planId) {
 }
 
 // Points a campaign package funds (shared across the creator's titles).
-export function campaignPool(planId) {
+// `rate` is the current Naira-per-point value from the admin settings.
+export function campaignPool(planId, rate = REDEEM_RATE) {
   const price = getPlan(planId).price || 0;
-  return Math.round((0.5 * price) / REDEEM_RATE); // = 2.5 * price
+  const r = rate > 0 ? rate : REDEEM_RATE;
+  return Math.round((PAYOUT_POOL_RATIO * price) / r); // = 2.5 * price at ₦0.2/pt
 }
 
 // ---- Per-title watch points (max 50): plan base + runtime + boost(0–15). Free = 0.
@@ -73,9 +74,6 @@ export function runtimeToMinutes(runtime) {
   return n ? +n[0] : 0;
 }
 
-export function isEligibleToEarn(user) {
-  return (user?.reviewCount || 0) >= EARN_MIN_REVIEWS;
-}
 export function planCan(planId, feature) {
   return !!getPlan(planId)?.[feature];
 }

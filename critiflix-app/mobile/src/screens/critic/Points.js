@@ -23,6 +23,8 @@ function Progress({ label, value, target }) {
   );
 }
 
+const naira = (n) => `₦${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
 const EARN = [
   { key: 'watch', label: 'Complete a watch', icon: 'M8 5v14l11-7z', tone: 'red' },
   { key: 'review', label: 'Publish a review', icon: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z', tone: 'navy' },
@@ -43,28 +45,39 @@ export default function Points({ navigation }) {
       ) : (
         <Pad style={{ marginTop: 10 }}>
           <Ticket style={{ marginBottom: 16 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <View>
-                <Text style={{ color: '#fff', opacity: 0.85, fontSize: 11 }}>Points balance</Text>
-                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 38, marginTop: 4 }}>{data.balance.toLocaleString()}</Text>
+                <Text style={{ color: '#fff', opacity: 0.85, fontSize: 11 }}>Cashable points</Text>
+                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 38, marginTop: 4 }}>{(data.balance || 0).toLocaleString()}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={{ color: '#fff', opacity: 0.85, fontSize: 11 }}>Worth</Text>
+                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 20, marginTop: 4 }}>{naira(data.nairaValue)}</Text>
               </View>
             </View>
+            {data.nairaPerPoint ? (
+              <Text style={{ color: '#fff', opacity: 0.8, fontSize: 11, marginTop: 8 }}>1 point = {naira(data.nairaPerPoint)} · {(data.lifetime || 0).toLocaleString()} points earned in total</Text>
+            ) : null}
           </Ticket>
 
-          {data.eligibility && !data.eligibility.eligible ? (
-            <Card style={{ padding: 14, marginBottom: 16, borderWidth: 1.5, borderColor: colors.line }}>
-              <Text style={{ fontWeight: '700', fontSize: 13.5, color: colors.navyInk }}>Unlock earning & cashout</Text>
-              <Text style={{ fontSize: 11.5, color: colors.mist, marginTop: 3, marginBottom: 12 }}>
-                Watch &amp; review {data.eligibility.minReviews.toLocaleString()} titles to start earning points and cash out.
+          {data.benchmark ? (
+            <Card style={{ padding: 14, marginBottom: 16, borderWidth: 1.5, borderColor: data.benchmark.reached ? '#CFE6DA' : colors.line }}>
+              <Text style={{ fontWeight: '700', fontSize: 13.5, color: colors.navyInk }}>
+                {data.benchmark.reached ? 'Benchmark reached' : `Your first ${data.benchmark.threshold.toLocaleString()} points`}
               </Text>
-              <Progress label="Reviews" value={data.eligibility.reviews} target={data.eligibility.minReviews} />
+              <Text style={{ fontSize: 11.5, color: colors.mist, marginTop: 3, marginBottom: 12 }}>
+                {data.benchmark.reached
+                  ? 'Every point you earn now is cashable.'
+                  : `The first ${data.benchmark.threshold.toLocaleString()} points you earn are a benchmark with no cash value. After that, every point counts toward your cashout. ${data.benchmark.remaining.toLocaleString()} to go.`}
+              </Text>
+              <Progress label="Benchmark" value={data.benchmark.earned} target={Math.max(1, data.benchmark.threshold)} />
             </Card>
           ) : null}
 
           <Button
-            title={data.eligibility?.eligible ? 'Convert points to reward' : 'Cashout locked'}
-            variant={data.eligibility?.eligible ? 'navy' : 'ghost'}
-            disabled={!data.eligibility?.eligible}
+            title={data.canCashout ? 'Convert points to reward' : data.benchmark && !data.benchmark.reached ? 'Cashout opens after the benchmark' : 'Not enough points to cash out'}
+            variant={data.canCashout ? 'navy' : 'ghost'}
+            disabled={!data.canCashout}
             onPress={() => navigation.navigate('Redeem', { balance: data.balance })}
             style={{ marginBottom: 18 }}
           />
