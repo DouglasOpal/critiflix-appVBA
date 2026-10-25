@@ -1,17 +1,32 @@
 {
-  "cli": { "version": ">= 5.9.0", "appVersionSource": "remote" },
+  "cli": {
+    "version": ">= 5.9.0",
+    "appVersionSource": "remote"
+  },
   "build": {
     "preview": {
       "distribution": "internal",
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk"
+      },
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_BASE": "https://api.critiflix.net" }
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://api.critiflix.net"
+      },
+      "environment": "preview"
     },
     "production": {
-      "android": { "buildType": "app-bundle" },
+      "android": {
+        "buildType": "app-bundle"
+      },
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_BASE": "https://api.critiflix.net" }
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://api.critiflix.net"
+      },
+      "environment": "production"
     }
   },
-  "submit": { "production": {} }
+  "submit": {
+    "production": {}
+  }
 }
