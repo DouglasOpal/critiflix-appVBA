@@ -136,10 +136,18 @@ r.patch('/:id', protect(), requireRole('creator'), asyncHandler(async (req, res)
   if (!t) throw notFound('Title not found');
   if (String(t.creator) !== String(req.user._id)) throw badRequest('You can only edit your own titles');
   if (t.status === 'delisted') throw badRequest('This title was delisted by an admin and can’t be edited');
-  // Free-plan titles are locked from edits for 3 months; paid plans can always edit (requirements 7 & 8).
-  if (normalizePlan(req.user.plan) === 'free' && t.editLockUntil && new Date() < new Date(t.editLockUntil)) {
+  // Thumbnails (posterSmall/posterLarge) can be changed at any time, on any plan.
+  const sent = Object.keys(req.body || {}).filter((k) => req.body[k] !== undefined);
+  const POSTER_KEYS = ['posterSmall', 'posterLarge'];
+  const posterOnly = sent.length > 0 && sent.every((k) => POSTER_KEYS.includes(k));
+  for (const k of POSTER_KEYS) {
+    const v = req.body?.[k];
+    if (v !== undefined && (typeof v !== 'string' || !v.trim())) throw badRequest('Thumbnail must be an uploaded image link');
+  }
+  // Other fields on free-plan titles are locked for 3 months; paid plans can always edit (requirements 7 & 8).
+  if (!posterOnly && normalizePlan(req.user.plan) === 'free' && t.editLockUntil && new Date() < new Date(t.editLockUntil)) {
     const until = new Date(t.editLockUntil).toLocaleDateString();
-    throw badRequest(`Free-plan titles can't be edited until ${until}. Upgrade to a paid plan to edit now.`);
+    throw badRequest(`Free-plan titles can't be edited until ${until}. Upgrade to a paid plan to edit now. You can still change the thumbnail.`);
   }
 
   const { title, synopsis, genre, runtime, trailerUrl, movieUrl, posterSmall, posterLarge } = req.body || {};
